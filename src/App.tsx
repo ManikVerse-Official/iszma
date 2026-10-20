@@ -33,6 +33,7 @@ const ManageCard = lazy(() =>
 );
 const Legal = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Legal })));
 const Founder = lazy(() => import('./pages/Founder').then((m) => ({ default: m.Founder })));
+const GameZone = lazy(() => import('./pages/GameZone').then((m) => ({ default: m.GameZone })));
 
 const RouteFallback = () => (
   <div className="min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end flex items-center justify-center">
@@ -67,6 +68,9 @@ function App() {
         <Route path="/create-greeting" element={<CreateGreeting />} />
         <Route path="/manage/:token" element={<ManageCard />} />
         <Route path="/founder" element={<Founder />} />
+        {/* Game Zone: the lobby, plus invite links (/game-zone/room/<code>). */}
+        <Route path="/game-zone" element={<GameZone />} />
+        <Route path="/game-zone/room/:code" element={<GameZone />} />
         <Route path="/terms" element={<Legal kind="terms" />} />
         <Route path="/privacy" element={<Legal kind="privacy" />} />
       </Routes>

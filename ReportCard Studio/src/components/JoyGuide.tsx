@@ -22,6 +22,7 @@ import {
   type GuideStep,
   type JoyLang,
 } from '../services/joyKnowledge';
+import { useAppStore } from '../store/appStore';
 
 /**
  * Joy — the in-Studio guider.
@@ -60,7 +61,21 @@ export default function JoyGuide() {
   const screen = useMemo(() => screenFromPath(location.pathname), [location.pathname]);
   const guide = SCREEN_GUIDES[screen];
 
+  /*
+   * Joy explains the *current* screen, so she reads the live app state: the
+   * validation results, the confirmed column mapping, the loaded photos (plus
+   * any manual correction) and the last generation run. Nothing is hard-coded —
+   * a value the app does not expose stays undefined and Joy says so.
+   */
+  const validation = useAppStore((state) => state.validation);
+  const students = useAppStore((state) => state.students);
+  const columnMapping = useAppStore((state) => state.columnMapping);
+  const photoMap = useAppStore((state) => state.photoMap);
+  const photoOverrides = useAppStore((state) => state.photoOverrides);
+  const generation = useAppStore((state) => state.generation);
+
   const [isOpen, setIsOpen] = useState(false);
+  /* Joy answers in the language the visitor wrote in (English by default). */
   const [lang, setLang] = useState<JoyLang>('en');
   const [input, setInput] = useState('');
   const [walk, setWalk] = useState<Walk | null>(null);
@@ -70,6 +85,7 @@ export default function JoyGuide() {
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastScreen = useRef(screen);
+  const navTimer = useRef<number | null>(null);
 
   const chips = guide.chips;
 
@@ -83,6 +99,17 @@ export default function JoyGuide() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  /*
+   * The nudge is a transient hint, not a permanent panel. Auto-dismiss it after
+   * a few seconds so it never keeps sitting on top of the page's own content
+   * (e.g. the mapping table on Import Students).
+   */
+  useEffect(() => {
+    if (!showBubble || isOpen) return;
+    const timer = window.setTimeout(() => setShowBubble(false), 9000);
+    return () => window.clearTimeout(timer);
+  }, [showBubble, isOpen]);
+
   /* Announce the new screen so the guidance always matches what is on the page. */
   useEffect(() => {
     if (lastScreen.current === screen) return;
@@ -95,6 +122,51 @@ export default function JoyGuide() {
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
   }, [messages, walk, isOpen]);
+
+  useEffect(
+    () => () => {
+      if (navTimer.current) window.clearTimeout(navTimer.current);
+    },
+    [],
+  );
+
+  /**
+   * Hands the parent Ishmaverse window a real mall route.
+   *
+   * The Studio lives in a same-origin iframe, so `window.top` is reachable and
+   * can be sent to the existing section. Standalone (or a cross-origin parent)
+   * returns false, and the caller explains instead of pretending it worked.
+   */
+  const navigateInMall = (route: string): boolean => {
+    try {
+      const top = window.top;
+      if (top && top !== window) {
+        top.location.href = route;
+        return true;
+      }
+    } catch {
+      /* Cross-origin parent — navigation is not available. */
+    }
+    return false;
+  };
+
+  const scheduleMallNavigation = (route: string, messageLang: JoyLang) => {
+    if (navTimer.current) window.clearTimeout(navTimer.current);
+    navTimer.current = window.setTimeout(() => {
+      navTimer.current = null;
+      if (!navigateInMall(route)) {
+        pushBot(
+          pick(
+            {
+              en: `I couldn’t open it from here. Open this link to continue: ${route}`,
+              hi: `Yahan se khol nahi payi. Aage badhne ke liye ye link kholo: ${route}`,
+            },
+            messageLang,
+          ),
+        );
+      }
+    }, 900);
+  };
 
   const openChat = () => {
     setShowBubble(false);
@@ -120,7 +192,14 @@ export default function JoyGuide() {
     const messageLang = detectJoyLanguage(text);
     setLang(messageLang);
 
-    const answer = resolveStudioQuery(text, screen, messageLang);
+    const answer = resolveStudioQuery(text, screen, messageLang, {
+      validation,
+      students,
+      columnMapping,
+      photoMap,
+      photoOverrides,
+      generation,
+    });
     if (!answer) {
       pushBot(studioFallback(screen, messageLang));
       return;
@@ -129,12 +208,17 @@ export default function JoyGuide() {
     if (answer.guide) {
       setWalk({ steps: answer.guide.steps, index: answer.guide.index });
     }
+    if (answer.navigate) {
+      scheduleMallNavigation(answer.navigate, messageLang);
+    }
   };
 
   const currentStep = walk ? walk.steps[walk.index] : null;
 
   return (
-    <div className="fixed bottom-20 right-3 md:bottom-6 md:right-6 z-50 flex flex-col items-end gap-3 no-print">
+    // On a phone the launcher sits clear above the fixed bottom tab bar (and any
+    // browser toolbar / safe area); on desktop it takes the usual corner.
+    <div className="fixed z-50 flex flex-col items-end gap-3 no-print right-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:right-6 lg:bottom-6">
       {isOpen ? (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-card w-[calc(100vw-1.5rem)] max-w-sm sm:w-96 overflow-hidden flex flex-col max-h-[70vh] md:max-h-[600px]">
           {/* Header */}
@@ -327,13 +411,14 @@ export default function JoyGuide() {
               </button>
             </div>
           )}
+          {/* Compact, icon-only launcher so it stays out of the way of the page. */}
           <button
             onClick={openChat}
-            className="bg-brand-600 p-3 rounded-full shadow-card hover:bg-brand-700 transition-colors flex items-center gap-2"
+            className="bg-brand-600 p-3 rounded-full shadow-card hover:bg-brand-700 transition-colors"
             aria-label="Open Joy, your ReportCard Studio guide"
+            title="Open Joy, your guide"
           >
             <MessageCircle className="h-5 w-5 text-white" />
-            <span className="hidden sm:inline text-white text-sm font-semibold pr-1">Need help?</span>
           </button>
         </div>
       )}

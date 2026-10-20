@@ -15,15 +15,12 @@ interface ImportMetaEnv {
   readonly VITE_STRIPE_PUBLISHABLE_KEY: string;
   /** Set to "demo" to exercise the flow without real gateway keys. */
   readonly VITE_PAYMENT_MODE: string;
-  /** Optional: prefills / hints the admin login screen. */
-  readonly VITE_ADMIN_EMAIL: string;
-  /**
-   * Local admin fallback password. Only used when Supabase Auth is unavailable
-   * or unreachable. The session is stored as a salted, expiring hash.
-   */
-  readonly VITE_ADMIN_PASSWORD: string;
-  readonly VITE_IMGBB_API_KEY: string;
   readonly VITE_GREETING_DOMAIN: string;
+  /*
+   * Deliberately absent — these are backend-only now:
+   *   VITE_ADMIN_EMAIL / VITE_ADMIN_PASSWORD  -> admin_users (bcrypt) + admin-login
+   *   VITE_IMGBB_API_KEY                      -> Edge secret + upload-image
+   */
 }
 
 interface ImportMeta {

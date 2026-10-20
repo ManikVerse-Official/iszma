@@ -17,19 +17,36 @@ export default function ReportCardScaler({ children }: { children: ReactNode }) 
     const element = containerRef.current;
     if (!element) return;
 
+    /*
+     * The scaled wrapper is sized from its CONTENT, so the content must be
+     * measured — never the wrapper.
+     *
+     * The wrapper's own `offsetHeight` is the value this component sets (scale ×
+     * natural height). Measuring it therefore returns 0/1px on the very first
+     * pass, which used to freeze the wrapper at a sub-pixel height: the card was
+     * then clipped away by the frame's `overflow-hidden` and the whole preview
+     * collapsed to a thin strip with the space beneath it left blank. Reading the
+     * card (`scrollHeight` keeps working even while the box is clipped) and
+     * re-measuring when IT resizes fixes that.
+     */
     const measure = () => {
       const available = element.clientWidth;
       if (available <= 0) return;
       setScale(Math.min(1, available / A4_WIDTH_PX));
-      const sheet = element.firstElementChild as HTMLElement | null;
-      if (sheet) setNaturalHeight(sheet.offsetHeight);
+      const wrapper = element.firstElementChild as HTMLElement | null;
+      if (!wrapper) return;
+      const card = (wrapper.firstElementChild as HTMLElement | null) ?? wrapper;
+      const measured = Math.max(card.offsetHeight, card.scrollHeight, wrapper.scrollHeight);
+      if (measured > 0) setNaturalHeight(measured);
     };
 
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
-    const sheet = element.firstElementChild as HTMLElement | null;
-    if (sheet) observer.observe(sheet);
+    const wrapper = element.firstElementChild as HTMLElement | null;
+    const card = (wrapper?.firstElementChild as HTMLElement | null) ?? null;
+    if (wrapper) observer.observe(wrapper);
+    if (card) observer.observe(card);
     window.addEventListener('resize', measure);
     return () => {
       observer.disconnect();

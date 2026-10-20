@@ -100,6 +100,13 @@ export interface ColumnMapping {
   columnName: string;
   fieldKey: ColumnMappingFieldKey;
   subjectName?: string;
+  /**
+   * Component name of a grouped sub-column ("English | PT" → "PT").
+   *
+   * Kept separate from `subjectName` so PT / NB / SEA / SA1 / TOTAL columns are
+   * never collapsed into five copies of the same subject.
+   */
+  componentName?: string;
   maxMarks?: number;
   overallFieldType?: 'total' | 'percentage' | 'position' | 'attendance' | 'remarks';
   excelColumn?: number; // Store original column index for stability
@@ -107,11 +114,32 @@ export interface ColumnMapping {
 
 export interface ValidationIssue {
   studentId?: string;
+  /** Affected student's name, carried so explanations are self-contained. */
+  studentName?: string;
   rowNumber?: number;
   severity: 'error' | 'warning';
   type: string;
   message: string;
   field?: string;
+  /**
+   * The offending workbook value, when known (e.g. the raw attendance cell).
+   * Used by Joy and the UI to explain the issue without re-reading the file.
+   */
+  value?: string;
+  /** Why the issue was raised, when it can be determined from the data. */
+  reason?: string;
+  /** What the user can do to correct it. */
+  suggestion?: string;
+  /**
+   * True when the cause is certain from the validation data; false/undefined
+   * means it is only a possible cause and should be presented as such.
+   */
+  confirmed?: boolean;
+  /**
+   * True when this issue blocks report generation for the affected student
+   * (errors do; warnings do not). Lets Joy and the UI say so explicitly.
+   */
+  blocksGeneration?: boolean;
 }
 
 export interface ValidationResult {

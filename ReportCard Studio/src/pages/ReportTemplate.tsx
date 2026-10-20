@@ -4,10 +4,10 @@ import { useAppStore } from '../store/appStore';
 import { useEntitlement } from '../store/entitlementStore';
 import { FREE_USE_LIMIT } from '../config/plans';
 import ReportCardPreview from '../components/report/ReportCardPreview';
-import ReportCardScaler from '../components/report/ReportCardScaler';
-import { buildPhotoIndex, resolvePhotosForStudents } from '../services/photoMatcher';
+import PreviewFrame from '../components/report/PreviewFrame';
+import { resolvePhotosWithOverrides } from '../services/photoOverrides';
 import { REPORT_CARD_THEMES, getTheme } from '../themes';
-import { computeTotals } from '../services/calculationEngine';
+import { buildReportCardModel } from '../services/reportCardModel';
 import { validateStudents } from '../services/validationEngine';
 import { ChevronLeft, ChevronRight, Download, Eye } from 'lucide-react';
 import { generateStudentPdfBlob, buildPdfFilename } from '../services/pdfGenerator';
@@ -17,6 +17,7 @@ export default function ReportTemplate() {
   const students = useAppStore((s) => s.students);
   const school = useAppStore((s) => s.schoolProfile);
   const photoMap = useAppStore((s) => s.photoMap);
+  const photoOverrides = useAppStore((s) => s.photoOverrides);
   const validation = useAppStore((s) => s.validation);
   const setValidation = useAppStore((s) => s.setValidation);
   const setProfile = useAppStore((s) => s.setSchoolProfile);
@@ -28,8 +29,8 @@ export default function ReportTemplate() {
 
   /* Hooks must run before the empty-state early return. */
   const studentPhotos = useMemo(
-    () => resolvePhotosForStudents(buildPhotoIndex(photoMap), students).photos,
-    [photoMap, students],
+    () => resolvePhotosWithOverrides(students, photoMap, photoOverrides).photos,
+    [photoMap, students, photoOverrides],
   );
 
   const student = students[idx];
@@ -57,7 +58,18 @@ export default function ReportTemplate() {
 
   const theme = getTheme(school.reportTheme);
   const photo = student ? studentPhotos.get(student.studentId) : undefined;
-  const totals = student ? computeTotals(student) : null;
+  /*
+   * Single source of truth: the sidebar reads the same model the preview and
+   * the PDF are built from. Previously the sidebar called `computeTotals` on
+   * its own with the DEFAULT grading bands, so a school with custom bands could
+   * see a different overall grade here than on the card.
+   */
+  const model = student ? buildReportCardModel(student, school) : null;
+  const totals = model?.totals ?? null;
+  /* Academic subjects that carry real marks (grade-only columns excluded). */
+  const presentSubjects = model
+    ? model.academic.filter((row) => !row.isGrandTotal && typeof row.marks === 'number').length
+    : 0;
   const studentIssues =
     validation?.issues.filter((i) => i.studentId === student?.studentId) ?? [];
 
@@ -140,8 +152,13 @@ export default function ReportTemplate() {
             Preview the report layout. Navigate between students to check each record.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg overflow-hidden">
+        {/*
+         * `flex-wrap` + `min-w-0` matter on a 320px phone: the student pager,
+         * the theme picker and Download This PDF together are wider than the
+         * screen, and without wrapping they pushed the whole page sideways.
+         */}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end min-w-0">
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg overflow-hidden shrink-0">
             <button
               onClick={() => setIdx((i) => Math.max(0, i - 1))}
               disabled={idx === 0}
@@ -161,7 +178,7 @@ export default function ReportTemplate() {
             </button>
           </div>
           <select
-            className="input !w-auto max-w-[190px]"
+            className="input !w-auto min-w-0 max-w-full sm:max-w-[190px]"
             value={school.reportTheme ?? theme.id}
             onChange={(e) => setProfile({ reportTheme: e.target.value })}
             title="Report card theme (change it in School Profile)"
@@ -172,7 +189,7 @@ export default function ReportTemplate() {
               </option>
             ))}
           </select>
-          <button onClick={downloadOne} disabled={downloading} className="btn-secondary">
+          <button onClick={downloadOne} disabled={downloading} className="btn-secondary shrink-0">
             <Download className="h-4 w-4" />
             {downloading ? 'Generating...' : 'Download This PDF'}
           </button>
@@ -214,27 +231,29 @@ export default function ReportTemplate() {
             </div>
             <div className="card-body space-y-2 text-sm">
               <SumRow label="Subjects Count" value={`${student?.subjects.length ?? 0}`} />
-              <SumRow label="Present" value={`${totals?.presentSubjects ?? 0}`} />
+              <SumRow label="Present" value={`${presentSubjects}`} />
               <SumRow
                 label="Grand Total"
-                value={`${totals?.totalMarks ?? 0} / ${totals?.totalMax ?? 0}`}
+                value={`${totals?.obtained ?? 0} / ${totals?.max ?? 0}`}
                 strong
               />
               <SumRow
                 label="Percentage"
-                value={totals && totals.percentage !== null && totals.percentage !== undefined ? `${totals.percentage}%` : '—'}
-              />
-              <SumRow label="Overall Grade" value={totals?.overallGrade ?? '—'} />
-              <SumRow
-                label="Result"
                 value={
                   totals && totals.percentage !== null && totals.percentage !== undefined
-                    ? totals.passed
-                      ? 'PROMOTED'
-                      : 'NEEDS IMPROVEMENT'
+                    ? `${totals.percentage}%`
                     : '—'
                 }
-                highlight={totals?.passed}
+              />
+              <SumRow label="Overall Grade" value={totals?.grade ?? '—'} />
+              {/*
+               * The result is the model's own value — the sidebar used to
+               * re-implement the 33% rule, so it could disagree with the card.
+               */}
+              <SumRow
+                label="Result"
+                value={totals ? totals.result : '—'}
+                highlight={Boolean(totals?.passed)}
               />
             </div>
           </div>
@@ -257,6 +276,19 @@ export default function ReportTemplate() {
                       {i.severity} · {i.type}
                     </div>
                     <div>{i.message}</div>
+                    {i.reason && (
+                      <div className="mt-1 text-ink-700">
+                        <span className="font-semibold">
+                          {i.confirmed === false ? 'Possible cause:' : 'Cause:'}
+                        </span>{' '}
+                        {i.reason}
+                      </div>
+                    )}
+                    {i.suggestion && (
+                      <div className="mt-1 text-ink-700">
+                        <span className="font-semibold">Fix:</span> {i.suggestion}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -282,10 +314,19 @@ export default function ReportTemplate() {
           </div>
         </div>
 
-        <div className="lg:col-span-3 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-180px)] pr-1 sm:pr-2 pb-8">
-          <ReportCardScaler>
+        {/*
+         * lg:col-span-3 keeps the card beside the summary on a desktop and
+         * stacked underneath it on a phone. The frame owns its own scrolling
+         * and the Expand control, so the card is never clipped by the viewport
+         * and never forces the page to scroll sideways.
+         */}
+        <div className="lg:col-span-3 pb-8">
+          <PreviewFrame
+            title={`Report card preview — ${student?.name ?? ''}${student?.rollNo ? ` (Roll ${student.rollNo})` : ''}`}
+            caption={`Theme: ${theme.name} · ${idx + 1} of ${students.length}`}
+          >
             <ReportCardPreview student={student} school={school} photoDataUrl={photo} />
-          </ReportCardScaler>
+          </PreviewFrame>
         </div>
       </div>
     </div>

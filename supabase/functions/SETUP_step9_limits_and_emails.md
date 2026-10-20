@@ -65,8 +65,10 @@ taken from the request body.
 - `src/services/notify.ts` — `sendWelcomeEmail`, `sendPurchaseEmail`,
   `sendSubscriptionEmail`. The purchase thank-you/bill is already sent from the
   card flow (skipped when the accountant receipt was already emailed).
-- `src/services/entitlement.ts` — `fetchStudioEntitlement`, `consumeStudioUse`,
-  `activateStudioSubscription`.
+- ReportCard Studio keeps its own entitlement client
+  (`src/services/entitlementApi.ts` + `src/store/entitlementStore.ts`), which is
+  where the plan/free-use calls actually run. The mall app has no separate
+  client of its own.
 
 ## 7. ReportCard Studio — server-enforced entitlement (wired)
 

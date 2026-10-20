@@ -5,13 +5,15 @@ import {
   buildPdfFilename,
   buildZipFilename,
 } from './pdfGenerator';
-import { buildPhotoIndex, resolvePhotosForStudents } from './photoMatcher';
+import { resolvePhotosWithOverrides, type PhotoOverrides } from './photoOverrides';
 import type { PhotoMap, SchoolProfile, Student } from '../types';
 
 export interface BatchOptions {
   students: Student[];
   school: SchoolProfile;
   photoMap: PhotoMap;
+  /** Manual per-student photo corrections made in the review table. */
+  photoOverrides?: PhotoOverrides;
   batchSize?: number;
   onProgress?: (info: {
     completed: number;
@@ -32,6 +34,7 @@ export async function generateAllAndZip(opts: BatchOptions): Promise<{
     students,
     school,
     photoMap,
+    photoOverrides,
     batchSize = 5,
     onProgress,
     onStudentComplete,
@@ -45,13 +48,13 @@ export async function generateAllAndZip(opts: BatchOptions): Promise<{
   let failed = 0;
 
   /*
-   * Photos are matched once for the whole batch: identity matching is per
-   * student (roll / admission / name), never dependent on upload order, and a
-   * picture claimed by two students is dropped for both instead of being
-   * attached to the wrong child.
+   * Photos are resolved once for the whole batch with the SAME resolver the
+   * review table uses: identity matching (roll / admission / name), never
+   * upload order, with the user's manual corrections applied on top. A picture
+   * claimed by two students is dropped for both instead of being attached to
+   * the wrong child.
    */
-  const photoIndex = buildPhotoIndex(photoMap);
-  const { photos: studentPhotos } = resolvePhotosForStudents(photoIndex, students);
+  const { photos: studentPhotos } = resolvePhotosWithOverrides(students, photoMap, photoOverrides ?? {});
 
   for (let i = 0; i < students.length; i += batchSize) {
     if (signal?.aborted) {

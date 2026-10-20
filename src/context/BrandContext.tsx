@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase, isSupabaseConfigured } from '../services/supabase';
+import { supabase, isSupabaseConfigured, supportsRealtime } from '../services/supabase';
 import { SiteSettings } from '../types';
 
 const DEFAULT_LOGO = '/ishmaverse.png';
@@ -83,7 +83,7 @@ export const BrandProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     initialize();
 
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && supportsRealtime()) {
       try {
         subscription = supabase
           .channel('site_settings_changes')

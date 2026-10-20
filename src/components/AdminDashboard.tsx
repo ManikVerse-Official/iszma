@@ -30,6 +30,9 @@ import {
   Crown,
   CalendarClock,
   Mail,
+  AlertTriangle,
+  Bot,
+  Gamepad2,
 } from 'lucide-react';
 import { GreetingCard, GreetingTheme, GreetingTier, Product, Transaction } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
@@ -42,7 +45,6 @@ import {
   uploadProductImage,
   uploadThemeArtwork,
 } from '../services/catalog';
-import { CARD_PUBLIC_COLUMNS } from '../services/greetingService';
 import {
   AudienceVisit,
   fetchAudienceVisits,
@@ -57,6 +59,8 @@ import {
   renewSubscription,
 } from '../services/subscriptions';
 import { SmartImage } from './SmartImage';
+import AdminJoy from './AdminJoy';
+import { AdminGameZone } from './AdminGameZone';
 import {
   ANIMATION_OPTIONS,
   GRADIENT_PRESETS,
@@ -71,6 +75,21 @@ import { useBrand } from '../context/BrandContext';
 import { useGreeting } from '../context/GreetingContext';
 import { useCatalog } from '../context/CatalogContext';
 
+/*
+ * The dashboard only ever needs the newest slice of its tables. Requesting a
+ * bounded set of the columns it actually renders (instead of every column of
+ * the whole table) is what keeps the panel quick to open.
+ */
+const ADMIN_ROW_LIMIT = 1000;
+const ADMIN_TRANSACTION_COLUMNS =
+  'id, client_name, client_email, product_name, payment_id, amount, created_at';
+const ADMIN_CARD_COLUMNS = 'id, sender_name, receiver_name, theme, created_at';
+/** The greeting-card columns the dashboard lists (keeps the payload small). */
+type AdminCardRow = Pick<
+  GreetingCard,
+  'id' | 'sender_name' | 'receiver_name' | 'theme' | 'created_at'
+>;
+
 type Tab =
   | 'overview'
   | 'audience'
@@ -80,7 +99,9 @@ type Tab =
   | 'transactions'
   | 'cards'
   | 'subscriptions'
-  | 'settings';
+  | 'settings'
+  | 'joy'
+  | 'game';
 
 interface ThemeForm {
   name: string;
@@ -223,6 +244,8 @@ export const AdminDashboard: React.FC = () => {
     themes,
     products,
     deletedThemeIds,
+    syncWarning,
+    dismissSyncWarning,
     addTheme,
     updateTheme,
     deleteTheme,
@@ -235,7 +258,7 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [cards, setCards] = useState<GreetingCard[]>([]);
+  const [cards, setCards] = useState<AdminCardRow[]>([]);
   const [visits, setVisits] = useState<AudienceVisit[]>([]);
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([]);
   const [subscriptionTotals, setSubscriptionTotals] = useState<SubscriptionTotals | null>(null);
@@ -244,6 +267,8 @@ export const AdminDashboard: React.FC = () => {
   const [subscriptionBusy, setSubscriptionBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  /** Audience rows are fetched lazily, the first time that tab is opened. */
+  const [visitsLoaded, setVisitsLoaded] = useState(false);
 
   const [themeModalOpen, setThemeModalOpen] = useState(false);
   const [editingTheme, setEditingTheme] = useState<GreetingTheme | null>(null);
@@ -275,7 +300,12 @@ export const AdminDashboard: React.FC = () => {
     if (!adminLoading && !isAdmin) navigate('/admin', { replace: true });
   }, [adminLoading, isAdmin, navigate]);
 
-  /* Ledger + cards come from Supabase when available; otherwise stay empty. */
+  /*
+   * Ledger + cards, newest first and capped. Previously this pulled every row
+   * of both tables (all columns) plus 2,000 visit rows before the panel could
+   * paint, which made the dashboard crawl once the store had real traffic.
+   * Audience data is heavy and only used by its own tab, so it now loads there.
+   */
   useEffect(() => {
     let active = true;
     const fetchData = async () => {
@@ -284,15 +314,21 @@ export const AdminDashboard: React.FC = () => {
         return;
       }
       try {
-        const [transactionsRes, cardsRes, visitsRes] = await Promise.all([
-          supabase.from('transactions').select('*').order('created_at', { ascending: false }),
-          supabase.from('greeting_cards').select(CARD_PUBLIC_COLUMNS).order('created_at', { ascending: false }),
-          fetchAudienceVisits(2000),
+        const [transactionsRes, cardsRes] = await Promise.all([
+          supabase
+            .from('transactions')
+            .select(ADMIN_TRANSACTION_COLUMNS)
+            .order('created_at', { ascending: false })
+            .limit(ADMIN_ROW_LIMIT),
+          supabase
+            .from('greeting_cards')
+            .select(ADMIN_CARD_COLUMNS)
+            .order('created_at', { ascending: false })
+            .limit(ADMIN_ROW_LIMIT),
         ]);
         if (!active) return;
         if (!transactionsRes.error) setTransactions(transactionsRes.data || []);
         if (!cardsRes.error) setCards(cardsRes.data || []);
-        if (visitsRes) setVisits(visitsRes);
       } catch {
         /* offline — leave the tables empty */
       } finally {
@@ -305,6 +341,21 @@ export const AdminDashboard: React.FC = () => {
     };
   }, []);
 
+  /* Audience visits are fetched once, when the Audience tab is first opened. */
+  useEffect(() => {
+    if (activeTab !== 'audience' || !isAdmin || visitsLoaded) return;
+    let active = true;
+    void (async () => {
+      const data = await fetchAudienceVisits(2000);
+      if (!active) return;
+      if (data) setVisits(data);
+      setVisitsLoaded(true);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [activeTab, isAdmin, visitsLoaded]);
+
   const tabs: { id: Tab; label: string; icon: typeof Home }[] = [
     { id: 'overview', label: 'Overview', icon: Home },
     { id: 'audience', label: 'Audience', icon: Users },
@@ -315,6 +366,8 @@ export const AdminDashboard: React.FC = () => {
     { id: 'cards', label: 'Greeting Cards', icon: Sparkles },
     { id: 'subscriptions', label: 'Subscriptions', icon: Crown },
     { id: 'settings', label: 'Site Settings', icon: Settings },
+    { id: 'joy', label: 'Admin Joy', icon: Bot },
+    { id: 'game', label: 'Game Zone', icon: Gamepad2 },
   ];
 
   /*
@@ -380,19 +433,30 @@ export const AdminDashboard: React.FC = () => {
     [products, searchTerm],
   );
 
-  const filteredTransactions = transactions.filter(
-    (tx) =>
-      tx.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (tx.client_email ?? '').toLowerCase().includes(searchTerm.toLowerCase()),
+  const filteredTransactions = useMemo(
+    () =>
+      transactions.filter(
+        (tx) =>
+          tx.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (tx.client_email ?? '').toLowerCase().includes(searchTerm.toLowerCase()),
+      ),
+    [transactions, searchTerm],
   );
 
-  const filteredCards = cards.filter(
-    (card) =>
-      card.sender_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      card.receiver_name.toLowerCase().includes(searchTerm.toLowerCase()),
+  const filteredCards = useMemo(
+    () =>
+      cards.filter(
+        (card) =>
+          card.sender_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          card.receiver_name.toLowerCase().includes(searchTerm.toLowerCase()),
+      ),
+    [cards, searchTerm],
   );
 
-  const totalRevenue = transactions.reduce((sum, tx) => sum + (tx.amount ?? 0), 0);
+  const totalRevenue = useMemo(
+    () => transactions.reduce((sum, tx) => sum + (tx.amount ?? 0), 0),
+    [transactions],
+  );
 
   const audience = useMemo(() => summariseAudience(visits), [visits]);
   const reportCardUrl =
@@ -685,6 +749,8 @@ export const AdminDashboard: React.FC = () => {
                 {activeTab === 'subscriptions' &&
                   'Who subscribed to ReportCard Studio, which plan, and when it renews or lapses.'}
                 {activeTab === 'settings' && 'Brand name, tagline and logo.'}
+                {activeTab === 'game' &&
+                  'Pair-3Balls activity: real sessions, players, wins and durations.'}
               </p>
             </div>
 
@@ -787,6 +853,11 @@ export const AdminDashboard: React.FC = () => {
                 <p className="px-5 py-3 text-xs text-yellow-200 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
                   Connect Supabase and deploy <code>track-visit</code> to collect audience data.
                 </p>
+              )}
+              {isSupabaseConfigured() && !visitsLoaded && (
+                <div className="flex items-center justify-center h-32">
+                  <div className="animate-spin w-10 h-10 border-4 border-neon-purple border-t-transparent rounded-full" />
+                </div>
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1121,6 +1192,29 @@ export const AdminDashboard: React.FC = () => {
                   Razorpay; everyone else sees $ and pays via PayPal.
                 </p>
               </div>
+
+              {syncWarning && (
+                <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/40 rounded-2xl px-5 py-4">
+                  <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-red-200">
+                      Saved on this device, but not on the server
+                    </p>
+                    <p className="text-xs text-red-200/80 mt-1">{syncWarning}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Until the server accepts the change, visitors and the payment page keep using
+                      the old price.
+                    </p>
+                  </div>
+                  <button
+                    onClick={dismissSyncWarning}
+                    className="text-red-300 hover:text-white shrink-0"
+                    aria-label="Dismiss sync warning"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
 
               <div className="bg-bg-dark-end border border-neon-purple/25 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-neon-purple/20 flex items-center gap-2">
@@ -1480,6 +1574,12 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* Admin Joy */}
+          {activeTab === 'joy' && <AdminJoy />}
+
+          {/* Game Zone analytics + controls */}
+          {activeTab === 'game' && <AdminGameZone />}
 
           {/* Site Settings */}
           {activeTab === 'settings' && (

@@ -3,7 +3,7 @@ import type { SchoolProfile, Student } from '../../types';
 import { buildReportCardModel } from '../../services/reportCardModel';
 import { getTheme, type ReportCardTheme } from '../../themes';
 import {
-  ACADEMIC_COL_RATIOS,
+  academicColumnRatios,
   ATTENDANCE_BAR_H,
   BODY_GAP_MM,
   CO_VALUE_W_MM,
@@ -23,6 +23,13 @@ import {
   TITLE_BAR_H,
   LEFT_W_MM,
 } from '../../themes/geometry';
+import {
+  DENSITY_SCALE,
+  densityTierFor,
+  mmCss,
+  TYPE_MM,
+  type DensityTier,
+} from '../../themes/typography';
 
 interface Props {
   student: Student;
@@ -46,24 +53,17 @@ interface Props {
  *   - nothing overlaps, whatever the length of the school name, father's name,
  *     subject names or remarks.
  */
-type Density = 'normal' | 'compact' | 'ultra';
-
 interface DensityTokens {
+  /** Font shrink factor for this tier — applied to every TYPE_MM size. */
+  scale: number;
   sectionGap: string;
-  sectionTitle: string;
-  acadFont: string;
   acadPad: string;
   acadHeadPad: string;
-  coFont: string;
   coPad: string;
-  skillTitle: string;
-  skillFont: string;
   skillPad: string;
   attPad: string;
-  infoFont: string;
   infoGap: string;
   infoPad: string;
-  remarkFont: string;
   remarkPad: string;
   remarkMinH: string;
   sigGap: string;
@@ -72,23 +72,26 @@ interface DensityTokens {
   sigStamp: string;
 }
 
-const DENSITY: Record<Density, DensityTokens> = {
+/**
+ * Font size for a shared TYPE_MM value at this density: the same mm the PDF
+ * prints, because CSS mm is an absolute unit. Text can therefore never be a
+ * different physical size on screen than on paper.
+ */
+function font(tokens: DensityTokens, baseMm: number): string {
+  return mmCss(baseMm * tokens.scale);
+}
+
+const DENSITY: Record<DensityTier, DensityTokens> = {
   normal: {
+    scale: DENSITY_SCALE.normal,
     sectionGap: 'mt-[2mm]',
-    sectionTitle: 'text-[11px]',
-    acadFont: 'text-[10.5px]',
     acadPad: 'py-[1.4mm]',
     acadHeadPad: 'py-[1.6mm]',
-    coFont: 'text-[10.5px]',
     coPad: 'py-[1.5mm]',
-    skillTitle: 'text-[10px]',
-    skillFont: 'text-[10px]',
     skillPad: 'py-[1.2mm]',
     attPad: 'py-[1.5mm]',
-    infoFont: 'text-[11px]',
     infoGap: 'gap-y-[1mm]',
     infoPad: 'p-[2mm]',
-    remarkFont: 'text-[10px]',
     remarkPad: 'p-[2mm]',
     remarkMinH: 'min-h-[9mm]',
     sigGap: 'mt-[4mm]',
@@ -97,21 +100,15 @@ const DENSITY: Record<Density, DensityTokens> = {
     sigStamp: 'h-[16mm]',
   },
   compact: {
+    scale: DENSITY_SCALE.compact,
     sectionGap: 'mt-[1.6mm]',
-    sectionTitle: 'text-[10px]',
-    acadFont: 'text-[9.5px]',
-    acadPad: 'py-[0.9mm]',
+    acadPad: 'py-[1mm]',
     acadHeadPad: 'py-[1.1mm]',
-    coFont: 'text-[9.5px]',
     coPad: 'py-[1mm]',
-    skillTitle: 'text-[9.5px]',
-    skillFont: 'text-[9.5px]',
     skillPad: 'py-[0.8mm]',
     attPad: 'py-[1mm]',
-    infoFont: 'text-[10px]',
     infoGap: 'gap-y-[0.6mm]',
     infoPad: 'p-[1.5mm]',
-    remarkFont: 'text-[9.5px]',
     remarkPad: 'p-[1.5mm]',
     remarkMinH: 'min-h-[8mm]',
     sigGap: 'mt-[3mm]',
@@ -120,21 +117,15 @@ const DENSITY: Record<Density, DensityTokens> = {
     sigStamp: 'h-[14mm]',
   },
   ultra: {
+    scale: DENSITY_SCALE.ultra,
     sectionGap: 'mt-[1.2mm]',
-    sectionTitle: 'text-[9.5px]',
-    acadFont: 'text-[8.5px]',
-    acadPad: 'py-[0.5mm]',
+    acadPad: 'py-[0.6mm]',
     acadHeadPad: 'py-[0.8mm]',
-    coFont: 'text-[8.5px]',
     coPad: 'py-[0.6mm]',
-    skillTitle: 'text-[9px]',
-    skillFont: 'text-[8.5px]',
     skillPad: 'py-[0.5mm]',
     attPad: 'py-[0.6mm]',
-    infoFont: 'text-[9.5px]',
     infoGap: 'gap-y-[0.4mm]',
     infoPad: 'p-[1mm]',
-    remarkFont: 'text-[9px]',
     remarkPad: 'p-[1mm]',
     remarkMinH: 'min-h-[6mm]',
     sigGap: 'mt-[2mm]',
@@ -146,9 +137,7 @@ const DENSITY: Record<Density, DensityTokens> = {
 
 function pickDensity(rows: number): DensityTokens {
   // `rows` counts the academic table including the GRAND TOTAL row.
-  if (rows >= 18) return DENSITY.ultra;
-  if (rows >= 11) return DENSITY.compact;
-  return DENSITY.normal;
+  return DENSITY[densityTierFor(rows)];
 }
 
 /** Section bar used for the title and every table header, at the PDF height. */
@@ -171,9 +160,10 @@ function SectionBar({
 }) {
   return (
     <div
-      className={`w-full flex items-center justify-center text-center font-bold uppercase rc-wrap ${tokens.sectionTitle} ${className}`}
+      className={`w-full flex items-center justify-center text-center font-bold uppercase rc-wrap ${className}`}
       style={{
         height: `${heightMm}mm`,
+        fontSize: font(tokens, TYPE_MM.sectionBar),
         backgroundColor: background,
         color,
         border: border ? `1px solid ${border}` : undefined,
@@ -217,6 +207,7 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
 
   return (
     <div
+      data-testid="report-card"
       className="bg-white shadow-card border border-slate-300 rounded-lg overflow-hidden mx-auto text-ink-900"
       style={{
         width: '100%',
@@ -374,22 +365,34 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
           </SectionBar>
           <table
             data-rc-section="academic"
-            className={`w-full border-collapse table-fixed ${d.acadFont}`}
+            className="w-full border-collapse table-fixed"
             // Rows grow into the spare height, mirroring the PDF's row fill.
-            style={{ flex: '1 1 auto' }}
+            // Font size comes from the shared TYPE_MM scale, so the printed card
+            // and this preview are the same physical size.
+            style={{ flex: '1 1 auto', fontSize: font(d, TYPE_MM.academic) }}
           >
             <colgroup>
-              {ACADEMIC_COL_RATIOS.map((ratio, i) => (
+              {academicColumnRatios(model.academicColumns.length).map((ratio, i) => (
                 <col key={i} style={{ width: `${ratio * 100}%` }} />
               ))}
             </colgroup>
+            {/*
+             * Header mirrors the uploaded sheet: the workbook's own component
+             * columns (PT / NB / SEA / SA2 …) followed by the Total column. There
+             * is no Grade column and no Remarks column inside the academic table.
+             */}
             <thead>
               <tr style={{ backgroundColor: '#f8fafc' }} className="text-ink-800">
-                <th className={`border ${d.acadHeadPad} px-1.5 text-left font-semibold rc-wrap`} style={{ borderColor: p.line }}>Subjects</th>
-                <th className={`border ${d.acadHeadPad} px-1 font-semibold rc-wrap`} style={{ borderColor: p.line }}>Max. Marks</th>
-                <th className={`border ${d.acadHeadPad} px-1 font-semibold rc-wrap`} style={{ borderColor: p.line }}>Marks Obtained</th>
-                <th className={`border ${d.acadHeadPad} px-1 font-semibold rc-wrap`} style={{ borderColor: p.line }}>Grade</th>
-                <th className={`border ${d.acadHeadPad} px-1.5 text-left font-semibold rc-wrap`} style={{ borderColor: p.line }}>Remarks</th>
+                <th className={`border ${d.acadHeadPad} px-1.5 text-left font-semibold uppercase rc-wrap`} style={{ borderColor: p.line }}>Subjects</th>
+                {model.academicColumns.map((column, i) => (
+                  <th
+                    key={i}
+                    className={`border ${d.acadHeadPad} px-0.5 font-semibold uppercase rc-wrap`}
+                    style={{ borderColor: p.line }}
+                  >
+                    {column.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -402,24 +405,24 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
                   <td className={`border px-1.5 ${d.acadPad} align-middle rc-wrap`} style={{ borderColor: p.line }}>
                     {row.name}
                   </td>
-                  <td className={`border px-1 ${d.acadPad} text-center align-middle rc-wrap`} style={{ borderColor: p.line }}>
-                    {row.maxMarks}
-                  </td>
-                  <td className={`border px-1 ${d.acadPad} text-center align-middle rc-wrap`} style={{ borderColor: p.line }}>
-                    {row.marks}
-                  </td>
-                  <td className={`border px-1 ${d.acadPad} text-center align-middle rc-wrap`} style={{ borderColor: p.line }}>
-                    {row.grade}
-                  </td>
-                  <td className={`border px-1.5 ${d.acadPad} align-middle rc-wrap`} style={{ borderColor: p.line }}>
-                    {row.remark}
-                  </td>
+                  {row.cells.map((cell, j) => (
+                    <td
+                      key={j}
+                      className={`border px-0.5 ${d.acadPad} text-center align-middle rc-wrap`}
+                      style={{ borderColor: p.line }}
+                    >
+                      {cell}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
           </table>
 
-          <div className="mt-[1.4mm] text-[8.5px] text-ink-700 rc-wrap">
+          <div
+            className="mt-[1.4mm] text-ink-700 rc-wrap"
+            style={{ fontSize: font(d, TYPE_MM.gradingScale) }}
+          >
             <span className="font-bold uppercase">Grading Scale:</span> {model.gradeScale}
           </div>
 
@@ -457,7 +460,11 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
           >
             Co-scholastic Areas (Grades)
           </SectionBar>
-          <table data-rc-section="co" className={`w-full border-collapse table-fixed ${d.coFont}`}>
+          <table
+            data-rc-section="co"
+            className="w-full border-collapse table-fixed"
+            style={{ fontSize: font(d, TYPE_MM.coScholastic) }}
+          >
             <colgroup>
               <col />
               <col style={{ width: `${CO_VALUE_W_MM}mm` }} />
@@ -487,24 +494,44 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
           <div aria-hidden style={{ flex: '1 1 0%', minHeight: 6, maxHeight: '12mm' }} />
 
           <div
-            data-rc-section="attendance"
+            data-rc-section="holistic-development"
             className="rounded-sm overflow-hidden"
             style={{ border: `1px solid ${p.line}` }}
           >
             <SectionBar
               heightMm={ATTENDANCE_BAR_H}
-              background={p.headerFill}
+              background={p.coScholasticFill}
               border={p.line}
               tokens={d}
               className="!border-0"
               >
-              Attendance
+              Holistic Development Profile
             </SectionBar>
-            <table className={`w-full table-fixed ${d.coFont}`}>
+            <table
+              className="w-full table-fixed border-collapse"
+              style={{ fontSize: font(d, TYPE_MM.holisticValue) }}
+            >
+              <colgroup>
+                <col />
+                <col style={{ width: `${CO_VALUE_W_MM}mm` }} />
+              </colgroup>
               <tbody>
-                <AttRow label="Total Working Days" value={model.attendance.workingDays} pad={d.attPad} line={p.line} />
-                <AttRow label="Days Present" value={model.attendance.present} pad={d.attPad} line={p.line} />
-                <AttRow label="Attendance %" value={model.attendance.percentage} pad={d.attPad} line={p.line} />
+                {model.holisticDevelopment.map((row, i) => (
+                  <tr key={i}>
+                    <td
+                      className={`border px-1.5 ${d.coPad} align-middle rc-wrap`}
+                      style={{ borderColor: p.line }}
+                    >
+                      {row.name}
+                    </td>
+                    <td
+                      className={`border px-1 ${d.coPad} text-center font-semibold align-middle rc-wrap`}
+                      style={{ borderColor: p.line }}
+                    >
+                      {row.value || '—'}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -530,10 +557,22 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
               Overall Performance
             </SectionBar>
             <div
-              className="flex-1 flex items-center justify-center text-center py-2 text-[16px] font-extrabold rc-wrap"
+              className="flex-1 flex flex-col items-center justify-center text-center py-2 gap-1"
               style={{ backgroundColor: p.overallSoft, color: p.overall }}
             >
-              {model.overallPerformance}
+              <div className="font-extrabold rc-wrap" style={{ fontSize: font(d, TYPE_MM.overallValue) }}>
+                {model.overallPerformance}
+              </div>
+              {/*
+               * Percentage · grade · result as ONE line taken from the model, so
+               * the card and the PDF can never print different wording for the
+               * same numbers. (The total sits in the GRAND TOTAL row above.)
+               */}
+              {model.totals.percentage !== null && (
+                <div className="font-bold rc-wrap" style={{ fontSize: font(d, TYPE_MM.overallLabel) }}>
+                  {model.totals.summaryShort}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -542,8 +581,8 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
       {/* ── Remarks ───────────────────────────────────────────── */}
       <div
         data-rc-section="remarks"
-        className={`${d.sectionGap} grid grid-cols-2 rounded-sm ${d.remarkPad} ${d.remarkFont} items-start`}
-        style={{ border: `1px solid ${p.line}`, columnGap: '4mm' }}
+        className={`${d.sectionGap} grid grid-cols-2 rounded-sm ${d.remarkPad} items-start`}
+        style={{ border: `1px solid ${p.line}`, columnGap: '4mm', fontSize: font(d, TYPE_MM.remarks) }}
       >
         <div className="min-w-0">
           <div className="font-bold uppercase mb-1">Teacher&rsquo;s Remarks</div>
@@ -560,7 +599,10 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
       </div>
 
       {/* ── Signatures ────────────────────────────────────────── */}
-      <div className={`${d.sigGap} grid grid-cols-3 gap-2 text-[10px]`}>
+      <div
+        className={`${d.sigGap} grid grid-cols-3 gap-2`}
+        style={{ fontSize: font(d, TYPE_MM.signatureName) }}
+      >
         <SignBlock
           label="Class Teacher"
           name={model.signatures.teacherName}
@@ -584,8 +626,8 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
 
       <div
         data-rc-section="footer-note"
-        className={`${d.sectionGap} rounded-sm text-center text-[8px] text-ink-600 py-1 rc-wrap`}
-        style={{ border: `1px solid ${p.line}` }}
+        className={`${d.sectionGap} rounded-sm text-center text-ink-600 py-1 rc-wrap`}
+        style={{ border: `1px solid ${p.line}`, fontSize: font(d, TYPE_MM.footer) }}
       >
         This Report Card reflects the holistic development of the child and is a shared responsibility of the school and parents.
       </div>
@@ -594,16 +636,22 @@ export default function HolisticReportPreview({ student, school, photoDataUrl, t
 }
 
 function InfoColumn({ items, tokens }: { items: { label: string; value: string }[]; tokens: DensityTokens }) {
+  const infoFont = { fontSize: font(tokens, TYPE_MM.info) };
   return (
     <div className={`min-w-0 ${tokens.infoGap} flex flex-col`}>
       {items.map((item, i) => (
         <div key={i} className="flex gap-1 min-w-0 items-start">
-          <span className={`font-semibold text-ink-700 w-[30mm] shrink-0 rc-wrap ${tokens.infoFont}`}>
+          <span
+            className="font-semibold text-ink-700 w-[30mm] shrink-0 rc-wrap"
+            style={infoFont}
+          >
             {item.label}
           </span>
-          <span className={`text-ink-500 shrink-0 ${tokens.infoFont}`}>:</span>
+          <span className="text-ink-500 shrink-0" style={infoFont}>
+            :
+          </span>
           {/* Value wraps onto as many lines as it needs — never truncated. */}
-          <span className={`flex-1 min-w-0 whitespace-normal rc-wrap text-ink-900 ${tokens.infoFont}`}>
+          <span className="flex-1 min-w-0 whitespace-normal rc-wrap text-ink-900" style={infoFont}>
             {item.value || '—'}
           </span>
         </div>
@@ -632,7 +680,7 @@ function SkillTable({
       <SectionBar heightMm={SKILLS_BAR_H} background={headerFill} tokens={tokens} className="!border-0">
         {title}
       </SectionBar>
-      <table className={`w-full table-fixed ${tokens.skillFont}`}>
+      <table className="w-full table-fixed" style={{ fontSize: font(tokens, TYPE_MM.skills) }}>
         <colgroup>
           <col style={{ width: '60%' }} />
           <col style={{ width: '40%' }} />
@@ -651,27 +699,6 @@ function SkillTable({
         </tbody>
       </table>
     </div>
-  );
-}
-
-function AttRow({
-  label,
-  value,
-  pad,
-  line,
-}: {
-  label: string;
-  value: string;
-  pad: string;
-  line: string;
-}) {
-  return (
-    <tr className="border-b border-slate-100 last:border-0">
-      <td className={`px-1.5 ${pad} text-ink-700 align-middle rc-wrap`} style={{ borderRight: `1px solid ${line}` }}>
-        {label}
-      </td>
-      <td className={`px-1.5 ${pad} text-right font-semibold align-middle rc-wrap`}>{value || '—'}</td>
-    </tr>
   );
 }
 
@@ -702,7 +729,12 @@ function SignBlock({
       </div>
       <div className="border-t border-slate-400 mt-0.5 pt-0.5">
         <div className="font-semibold text-ink-900 rc-wrap">{name || ''}</div>
-        <div className="text-[8.5px] font-bold uppercase tracking-wide text-ink-600 rc-wrap">{label}</div>
+        <div
+          className="font-bold uppercase tracking-wide text-ink-600 rc-wrap"
+          style={{ fontSize: font(tokens, TYPE_MM.footer) }}
+        >
+          {label}
+        </div>
       </div>
     </div>
   );

@@ -75,7 +75,13 @@ export default function Layout() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <nav className="hidden md:flex items-center gap-1">
+            {/*
+             * The full nav only appears from `lg`. At 768px (tablet) the five
+             * links plus Plans and Sign out were 17px wider than the screen and
+             * forced the whole page to scroll sideways, so tablets keep the
+             * bottom tab bar instead.
+             */}
+            <nav className="hidden lg:flex items-center gap-1">
             {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             return (
@@ -157,7 +163,7 @@ export default function Layout() {
        * every target is comfortably tappable.
        */}
       <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 pb-safe no-print"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 pb-safe no-print"
         aria-label="Main"
       >
         <div className="grid grid-cols-5">
@@ -237,7 +243,9 @@ export default function Layout() {
         </div>
       )}
 
-      <main className="flex-1 pb-20 md:pb-0">
+      {/* Bottom padding reserves room for Joy's floating launcher so it can
+          never hide the last row of a table on any screen size. */}
+      <main className="flex-1 pb-20 lg:pb-24">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
           <Outlet />
         </div>
@@ -247,7 +255,7 @@ export default function Layout() {
       <JoyGuide />
 
       <footer className="border-t border-slate-200 bg-white no-print">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 pb-20 md:pb-4 text-xs text-ink-500 flex flex-col sm:flex-row sm:items-center gap-1 sm:justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 pb-20 lg:pb-4 text-xs text-ink-500 flex flex-col sm:flex-row sm:items-center gap-1 sm:justify-between">
           <span>
             ReportCard Studio · Phase 1 · Report Generation Engine
           </span>

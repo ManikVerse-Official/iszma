@@ -36,9 +36,16 @@ export interface EmailPayload {
   daysLeft?: number;
 }
 
-/** Sends a transactional email. Returns true when Resend accepted it. */
+/**
+ * Sends a transactional email. Returns true when Resend accepted it.
+ *
+ * `to` may be empty for a purchase bill: the `send-email` function then
+ * addresses it to the store owner (ADMIN_NOTIFY_EMAIL, a server secret) so the
+ * record of the sale is never lost. Every other template still needs a real
+ * recipient.
+ */
 export const sendTransactionalEmail = async (payload: EmailPayload): Promise<boolean> => {
-  if (!isSupabaseConfigured() || !payload.to) return false;
+  if (!isSupabaseConfigured()) return false;
   try {
     const { data, error } = await supabase.functions.invoke('send-email', { body: payload });
     if (error) {

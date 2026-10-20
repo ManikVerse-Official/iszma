@@ -51,3 +51,11 @@ node_modules/.vite
 # ---------------------------------------------------------------------------
 supabase/.temp
 supabase/.branches
+
+# Temporary ReportCard test artifacts
+ReportCard Studio/.tmpbuild/*.zip
+ReportCard Studio/.tmpbuild/preview-testdata_sbs_components.html
+ReportCard Studio/.tmpbuild/preview-testdata_sbs_components_no_name.html
+ReportCard Studio/.tmpbuild/preview-testdata_unmerged_groups.html
+ReportCard Studio/.tmpbuild/probe-review.png
+ReportCard Studio/.tmpbuild/shot-photo-review.png

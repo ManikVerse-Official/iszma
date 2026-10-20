@@ -304,6 +304,26 @@ function inferSubjectName(header: string): string {
   return canonicalizeSubjectName(parts[0]);
 }
 
+/**
+ * Same as {@link inferSubjectName} but WITHOUT canonicalising the label.
+ *
+ * The preview has to mirror the uploaded sheet, so a grouped header keeps the
+ * school's own spelling ("Maths", "SCI.", "Sst") instead of being renamed.
+ */
+function inferRawSubjectName(header: string): string {
+  const parts = splitHeaderPath(header);
+  if (parts.length === 0) return String(header ?? '').trim();
+
+  if (parts.length >= 3) {
+    const candidate = parts[parts.length - 2];
+    if (candidate && !isStructuralPart(candidate) && !isComponentPart(candidate)) {
+      return candidate;
+    }
+  }
+
+  return parts[0];
+}
+
 function isStructuralPart(value: string): boolean {
   const normalized = normalizeHeader(value);
 
@@ -486,82 +506,225 @@ function shouldMapAsSubject(column: string): boolean {
 }
 
 /**
+ * Split a flattened header into its hierarchy levels.
+ *
+ * "English | PT"      → ["English", "PT"]
+ * "Student Name"      → ["Student Name"]
+ */
+function splitHeaderPath(header: string): string[] {
+  return String(header ?? '')
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Co-scholastic / grade-only column names (MV, GK, DRAW, Art, …).
+ *
+ * These carry letter grades, not numeric marks, so they stay separate from the
+ * academic subjects even when the workbook mixes them into the same row.
+ */
+const GRADE_SUBJECT_TERMS = [
+  'mv',
+  'gk',
+  'general knowledge',
+  'draw',
+  'drawing',
+  'art',
+  'art education',
+  'craft',
+  'crafts',
+  'music',
+  'dance',
+  'physical education',
+  'pe',
+  'sports',
+  'games',
+  'yoga',
+  'moral',
+  'moral science',
+  'value education',
+  'work education',
+  'discipline',
+  'punctuation',
+];
+
+function isGradeSubjectHeader(header: string): boolean {
+  const normalized = normalizeHeader(header);
+  if (!normalized) return false;
+  return GRADE_SUBJECT_TERMS.some((term) => term === normalized);
+}
+
+/**
+ * A standalone overall column (no subject in front of it).
+ *
+ * "TOTAL", "%", "POSITION" — these are the sheet's grand total / percentage /
+ * position, never a subject. A grouped "English | TOTAL" is NOT matched here;
+ * it belongs to English.
+ */
+function classifyOverallHeader(
+  header: string,
+): 'total' | 'percentage' | 'position' | 'attendance' | null {
+  const normalized = normalizeHeader(header);
+  if (!normalized) return null;
+
+  if (
+    normalized === 'total' ||
+    normalized === 'grand total' ||
+    normalized === 'overall total' ||
+    normalized === 'total marks' ||
+    normalized === 'obtained marks' ||
+    normalized === 'total obtained'
+  ) {
+    return 'total';
+  }
+
+  if (
+    normalized === 'percentage' ||
+    normalized === 'percent' ||
+    normalized === '%' ||
+    normalized === 'pc'
+  ) {
+    return 'percentage';
+  }
+
+  if (
+    normalized === 'position' ||
+    normalized === 'rank' ||
+    normalized === 'class rank' ||
+    normalized === 'overall rank' ||
+    normalized === 'standing'
+  ) {
+    return 'position';
+  }
+
+  if (normalized === 'attendance' || normalized === 'attendance %') {
+    return 'attendance';
+  }
+
+  return null;
+}
+
+/**
  * Main automatic mapper.
+ *
+ * Every mapping records the physical EXCEL COLUMN INDEX (`excelColumn`) so a
+ * value is always read from its own cell. Duplicate header text — five columns
+ * all called "English", or the per-subject "TOTAL" columns — can therefore
+ * never collapse onto each other, and a component is never attached to the
+ * wrong subject.
  */
 export function autoMapColumns(headers: string[]): ColumnMapping[] {
   const mapping: ColumnMapping[] = [];
   const assignedFields = new Set<FieldKey>();
 
-  for (const column of headers) {
+  headers.forEach((column, index) => {
     const columnName = String(column ?? '').trim();
 
     if (!columnName) {
       mapping.push({
         columnName,
         fieldKey: 'ignore',
+        excelColumn: index,
       });
-      continue;
+      return;
     }
+
+    const parts = splitHeaderPath(columnName);
 
     /**
      * STEP 1
-     * Try to identify core student fields.
+     * A grouped "Subject | Component" header belongs to that subject — including
+     * its own TOTAL / GRADE column. It must be captured before anything else so
+     * a per-subject TOTAL never becomes the sheet's grand total.
      */
-    const coreField = findCoreField(columnName, assignedFields);
-
-    if (coreField) {
-      mapping.push({
-        columnName,
-        fieldKey: coreField,
-      });
-
-      assignedFields.add(coreField);
-      continue;
-    }
-
-    /**
-     * STEP 2
-     * Never turn obvious overall/result columns into subjects.
-     */
-    if (isOverallOrResultColumn(columnName)) {
-      mapping.push({
-        columnName,
-        fieldKey: 'ignore',
-      });
-
-      continue;
-    }
-
-    /**
-     * STEP 3
-     * Detect subject/component columns generically.
-     */
-    if (shouldMapAsSubject(columnName)) {
-      const normalized = normalizeHeader(columnName);
-      const subjectName = inferSubjectName(columnName);
+    if (parts.length >= 2) {
+      const subjectName = inferRawSubjectName(columnName);
+      const componentName = parts[parts.length - 1];
 
       mapping.push({
         columnName,
         fieldKey: 'subject',
-        subjectName: subjectName || canonicalizeSubjectName(columnName),
-        maxMarks: inferMaxMarks(columnName, normalized),
+        subjectName: subjectName || parts[0],
+        componentName,
+        maxMarks: inferMaxMarks(columnName, normalizeHeader(columnName)),
+        excelColumn: index,
       });
+      return;
+    }
 
-      continue;
+    /**
+     * STEP 2
+     * Standalone overall columns stay separate from the subjects.
+     */
+    const overall = classifyOverallHeader(columnName);
+    if (overall) {
+      mapping.push({
+        columnName,
+        fieldKey: 'overallField',
+        overallFieldType: overall,
+        excelColumn: index,
+      });
+      return;
+    }
+
+    /**
+     * STEP 3
+     * Core student fields (name, roll, father, DOB, address, …).
+     */
+    const coreField = findCoreField(columnName, assignedFields);
+    if (coreField && coreField !== 'position') {
+      mapping.push({
+        columnName,
+        fieldKey: coreField,
+        excelColumn: index,
+      });
+      assignedFields.add(coreField);
+      return;
     }
 
     /**
      * STEP 4
+     * Co-scholastic grade columns.
+     */
+    if (isGradeSubjectHeader(columnName)) {
+      mapping.push({
+        columnName,
+        fieldKey: 'gradeField',
+        subjectName: columnName,
+        maxMarks: 0,
+        excelColumn: index,
+      });
+      return;
+    }
+
+    /**
+     * STEP 5
+     * A subject that occupies a single column of its own.
+     */
+    if (shouldMapAsSubject(columnName)) {
+      const normalized = normalizeHeader(columnName);
+
+      mapping.push({
+        columnName,
+        fieldKey: 'subject',
+        subjectName: inferSubjectName(columnName) || canonicalizeSubjectName(columnName),
+        maxMarks: inferMaxMarks(columnName, normalized),
+        excelColumn: index,
+      });
+      return;
+    }
+
+    /**
+     * STEP 6
      * Unknown columns are ignored by default.
-     *
-     * This is intentional:
-     * an unknown column must NEVER silently become student data.
      */
     mapping.push({
       columnName,
       fieldKey: 'ignore',
+      excelColumn: index,
     });
-  }
+  });
 
   return mapping;
 }

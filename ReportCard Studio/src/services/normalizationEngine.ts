@@ -394,15 +394,76 @@ export function buildStudentsFromRows(
       fields[m.fieldKey] = parseCellValue(getMappedCell(row, m));
     }
 
-    const subjects: SubjectMark[] = subjectMappings.map((m) => {
-      const parsed = parseSubjectCell(getMappedCell(row, m));
+    /*
+     * Subject columns are grouped by their subject name so PT / NB / SEA / SA1 /
+     * TOTAL stay components of ONE subject instead of becoming five copies of
+     * "English". Each component is read from its own Excel column index, so a
+     * component can never be attached to the wrong subject.
+     */
+    const groupedSubjects = new Map<
+      string,
+      { name: string; entries: { mapping: ColumnMapping; index: number }[] }
+    >();
+
+    subjectMappings.forEach((m, index) => {
+      const rawName = (m.subjectName || m.columnName || '').trim();
+      if (!rawName) return;
+
+      const normalized = rawName.toLowerCase();
+      const group = groupedSubjects.get(normalized) ?? { name: rawName, entries: [] };
+      group.entries.push({ mapping: m, index });
+      groupedSubjects.set(normalized, group);
+    });
+
+    const subjects: SubjectMark[] = [...groupedSubjects.values()].map((group) => {
+      const components: SubjectComponent[] = group.entries.map(({ mapping }) => {
+        const parsed = parseSubjectCell(getMappedCell(row, mapping));
+        const header = String(mapping.columnName ?? '');
+        const componentName =
+          mapping.componentName ||
+          deriveComponentName(header, group.name) ||
+          group.name;
+
+        return {
+          name: componentName,
+          marks: parsed.marks,
+          maxMarks: mapping.maxMarks ?? 100,
+          status: parsed.status,
+          rawValue: parsed.rawValue,
+          isTotal:
+            isTotalLikeHeader(componentName) ||
+            isTotalLikeHeader(header),
+        };
+      });
+
+      /* A single-column subject keeps the plain subject value. */
+      if (components.length === 1) {
+        return {
+          name: group.name,
+          marks: components[0].marks,
+          maxMarks: components[0].maxMarks ?? 100,
+          status: components[0].status,
+          rawValue: components[0].rawValue,
+          hasComponents: false,
+        };
+      }
+
+      const totalComponent = components.find((component) => component.isTotal);
+      const marks = totalComponent
+        ? totalComponent.marks
+        : sumPresentMarks(components) ?? lastNumericMarks(components);
+      const status = totalComponent
+        ? totalComponent.status
+        : components.find((component) => component.status !== 'present')?.status ?? 'present';
+      const maxMarks = totalComponent?.maxMarks || 100;
 
       return {
-        name: m.subjectName || m.columnName,
-        maxMarks: m.maxMarks ?? 100,
-        ...parsed,
-        hasComponents: false,
-        components: undefined,
+        name: group.name,
+        marks,
+        maxMarks,
+        status,
+        hasComponents: true,
+        components,
       };
     });
 

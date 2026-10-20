@@ -18,4 +18,16 @@ export const isSupabaseConfigured = (): boolean => {
   return /^https?:\/\/[^/\s]+\.supabase\.(co|in)/i.test(url);
 };
 
+/*
+ * Realtime authenticates its WebSocket with a JWT. A Supabase *publishable* key
+ * (`sb_publishable_…`) is not a JWT, so `channel().subscribe()` always fails
+ * with "WebSocket is closed before the connection is established" and logs a
+ * network error on every page load, even though nothing needs realtime.
+ *
+ * Callers use this to skip a subscription that cannot succeed instead of
+ * shipping a permanent console error to production.
+ */
+export const supportsRealtime = (): boolean =>
+  /^eyJ/.test((import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim());
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);

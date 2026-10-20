@@ -43,6 +43,7 @@ import {
   MAX_GREETING_AUDIO_BYTES,
 } from '../services/greetingAudio';
 import { sendPurchaseEmail } from '../services/notify';
+import { uploadCardImageUrl } from '../services/imageUpload';
 import { TIER_LABELS, TIER_TAGLINES } from '../data/greetingThemes';
 import {
   AUDIO_TRACKS_BY_CATEGORY,
@@ -276,20 +277,14 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
     }
   };
 
+  /**
+   * Uploads through the `upload-image` Edge Function (the ImgBB key stays
+   * server-side). Returns '' on failure so the payment flow is never blocked by
+   * a photo problem — the card is simply created without one.
+   */
   const uploadImage = async (file: File): Promise<string> => {
-    const apiKey = import.meta.env.VITE_IMGBB_API_KEY;
-    if (!apiKey) return '';
     try {
-      const formData = new FormData();
-      formData.append('image', file);
-      // Auto-expire the hosted image after 48h so it matches the card's life.
-      formData.append('expiration', '172800');
-      const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await response.json();
-      return data?.success ? data.data.url : '';
+      return await uploadCardImageUrl(file);
     } catch (error) {
       console.error('Image upload failed:', error);
       return '';
@@ -397,18 +392,15 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
        * If the buyer left no email, the bill is addressed to the store owner so
        * the record is never lost.
        */
-      const billingEmail = customerEmail || (import.meta.env.VITE_ADMIN_EMAIL as string) || '';
-      if (billingEmail) {
-        void sendPurchaseEmail(billingEmail, {
-          name: details.sender.trim(),
-          productName: `${theme.name} — Digital Greeting Card`,
-          amount: isFreeTheme ? '0' : String(displayPrice),
-          currency: isIndiaRegion ? 'INR' : 'USD',
-          paymentId: transaction?.payment_id ?? '',
-          orderDate: new Date().toDateString(),
-          cardUrl: buildGreetingUrl(card.id),
-        });
-      }
+      void sendPurchaseEmail(customerEmail, {
+        name: details.sender.trim(),
+        productName: `${theme.name} — Digital Greeting Card`,
+        amount: isFreeTheme ? '0' : String(displayPrice),
+        currency: isIndiaRegion ? 'INR' : 'USD',
+        paymentId: transaction?.payment_id ?? '',
+        orderDate: new Date().toDateString(),
+        cardUrl: buildGreetingUrl(card.id),
+      });
 
       setCreateError('');
       setLastPayment(null);
@@ -577,6 +569,12 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
                       />
                     </div>
 
+                    {/*
+                     * Typography, custom wording and text/background colours are
+                     * paid-theme features. The FREE Welcome Card keeps its own
+                     * designed font and palette so it stays a one-tap card.
+                     */}
+                    {!isFreeTheme && (
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <label className="block text-sm font-semibold text-gray-300">
@@ -627,7 +625,9 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
                         — best for: {getFontById(fontId).mood}
                       </p>
                     </div>
+                    )}
 
+                    {!isFreeTheme && (
                     <div>
                       <span className="block text-sm font-semibold text-gray-300 mb-2">
                         Card text <span className="text-gray-500 font-normal">(optional)</span>
@@ -672,7 +672,9 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
                         message come from the fields above.
                       </p>
                     </div>
+                    )}
 
+                    {!isFreeTheme && (
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-semibold text-gray-300">
@@ -827,6 +829,20 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
                         make the card truly yours.
                       </p>
                     </div>
+                    )}
+
+                    {isFreeTheme && (
+                      <div className="rounded-xl border border-neon-purple/25 bg-bg-dark-start px-4 py-3">
+                        <span className="block text-sm font-semibold text-gray-200">
+                          Free Welcome Card — simple by design
+                        </span>
+                        <span className="mt-1 block text-[11px] leading-relaxed text-gray-500">
+                          Your names, message and photo are all you need. Font choice, custom
+                          wording, text colours and background music come with the paid themes —
+                          pick any paid card if you want to style it your way.
+                        </span>
+                      </div>
+                    )}
 
                     {theme && (
                       <div className="space-y-3">

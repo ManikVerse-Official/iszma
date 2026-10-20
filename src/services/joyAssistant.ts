@@ -6,9 +6,11 @@
  * of Ishmaverse, decides whether they are asking *where* something is or asking
  * to be *taken there*, and answers in the right language.
  *
- * Language policy: English is the default. Joy only switches to Hinglish when
- * the visitor actually writes in Hinglish. Every reply therefore exists in both
- * languages. Joy is female, so Hinglish replies use feminine verb forms.
+ * Language policy: Joy answers in the language the visitor writes in. English is
+ * the default; a Hinglish question ("attendance 103 kyu warning de raha hai")
+ * gets a Hinglish answer, an English question gets an English answer — the
+ * assistant resolves the same intent either way. Every reply therefore exists in
+ * both languages, and the UI follows the visitor's own message.
  *
  * Every section of the mall lives in `src/data/sections.ts`; the routes here
  * mirror the app's real routes so a match can navigate straight to it.
@@ -21,10 +23,20 @@ import {
   type JoySectionGuide,
   getSectionGuide,
 } from './joySectionGuides';
+import { mallSections } from '../data/sections';
 
 export type JoyLang = 'en' | 'hi';
 export type { JoyGuideStep, JoySectionGuide };
 export { getSectionGuide };
+
+/**
+ * The language an interface answers a message in: the visitor's own.
+ *
+ * Understanding and answering use the same signal, so a Hinglish question is
+ * never answered in English (and vice versa). The keyword banks are
+ * language-independent, so the resolved intent is identical in both cases.
+ */
+export const joyReplyLanguage = (raw: string): JoyLang => detectJoyLanguage(raw);
 
 /** Bilingual text, resolved with {@link pick}. */
 export interface JoyText {
@@ -74,8 +86,8 @@ export const JOY_TOPICS: JoyTopic[] = [
       'happy birthday card', 'invitation', 'invite',
     ],
     reply: {
-      en: 'Digital Greetings 💌 live in the “Digital Greetings” section of the mall. There you will find animated cards for birthdays, anniversaries, weddings, Diwali, Christmas, thank-yous and more — and a FREE Welcome Card sits right at the top. Would you like me to take you there?',
-      hi: 'Digital Greetings 💌 mall ke “Digital Greetings” section me hai. Birthday, anniversary, wedding, Diwali, Christmas aur thank-you — sab ke animated cards milte hain, aur sabse upar ek FREE Welcome Card bhi hai. Main aapko wahan le chalti hoon?',
+      en: 'Digital Greetings 💌 live in the “Digital Greetings” section of the mall. There you will find animated cards for birthdays, anniversaries, weddings, Diwali, Christmas, thank-yous and more. A FREE Welcome Card sits right at the top and costs nothing — you can send it again and again (a small fair-use free allowance applies per email/network); paid themes add the full library, more fonts, custom colours and music. Would you like me to take you there?',
+      hi: 'Digital Greetings 💌 mall ke “Digital Greetings” section me hai. Birthday, anniversary, wedding, Diwali, Christmas aur thank-you — sab ke animated cards milte hain. Sabse upar ek FREE Welcome Card hai jo bilkul free hai — aap ise baar baar bhej sakte ho (per email/network ek chhoti free limit lagti hai); paid themes me poori library, zyada fonts, custom colours aur music milta hai. Main aapko wahan le chalti hoon?',
     },
     actionLabel: { en: 'Open Digital Greetings', hi: 'Digital Greetings kholo' },
   },
@@ -109,12 +121,36 @@ export const JOY_TOPICS: JoyTopic[] = [
     keywords: [
       'free', 'free card', 'free greeting', 'free me', 'free mein', 'muft', 'muft card',
       'welcome card', 'free kaise', 'free wishing', 'free wish', 'no cost card',
+      'free again', 'free dobara', 'baar baar free', 'free recharge', 'free card again',
+      'again and again', 'multiple free', 'ek se zyada free', 'jab chahe free',
     ],
     reply: {
-      en: 'The FREE Welcome Card 💌 is pinned at the very top of the “Digital Greetings” section. It is marked FREE — one free card per email. Would you like me to open it for you?',
-      hi: 'FREE Welcome Card 💌 “Digital Greetings” section me sabse upar hai. Us par FREE likha hai — ek email se ek card bilkul free. Main aapko wahan le chalti hoon?',
+      en: 'The FREE Welcome Card 🎁 is pinned at the very top of “Digital Greetings”, and it costs nothing — no payment and no card details, ever. You can use it again and again (the only cap is a small fair-use free allowance per email and per network). It keeps your names, message and photo, and its share link stays live for 48 hours. Would you like me to open it for you?',
+      hi: 'FREE Welcome Card 🎁 “Digital Greetings” me sabse upar hai aur bilkul free hai — na payment, na card details, kabhi bhi. Aap ise baar baar use kar sakte ho (bas ek chhoti fair-use free limit per email aur per network lagti hai). Isme aapke naam, message aur photo lagte hain, aur share link 48 ghante live rehta hai. Main aapko wahan le chalti hoon?',
     },
     actionLabel: { en: 'Open the free card', hi: 'Free card kholo' },
+  },
+  {
+    id: 'game-zone',
+    route: sectionsRoute('game-zone'),
+    emoji: '🎮',
+    name: 'Game Zone',
+    available: true,
+    /*
+     * Location words only. The rules themselves are answered by the Pair-3Balls
+     * FAQ entry and the Game Zone guide — a rules question matches a longer
+     * keyword there and wins, so this topic can never swallow the rules.
+     */
+    keywords: [
+      'game zone', 'games section', 'game section', 'arcade', 'play a game', 'play games',
+      'online game', 'online games', 'multiplayer', 'pair 3 balls', 'pair3balls', 'pair-3balls',
+      'game kaha', 'game kahan', 'games kaha', 'khelne kaha', 'khelne ka section',
+    ],
+    reply: {
+      en: 'Game Zone 🎮 lives in the “Game Zone” section of the mall. Inside is Pair-3Balls — nine points, three pieces each, one line to win, 60 seconds a turn — in three modes: vs Computer (works offline), a Private Room you invite a friend to with a code, and World Match against a real player. When the backend is off, the section says the online modes are unavailable instead of pretending. Want me to open it?',
+      hi: 'Game Zone 🎮 mall ke “Game Zone” section me hai. Andar Pair-3Balls hai — nau points, teen pieces, ek line banao aur jeeto, har turn 60 second — teen modes me: Computer ke saath (offline chalta hai), Private Room (code se dost ko bulao) aur World Match (asli player se). Backend off ho to section saaf likhta hai ki online modes available nahi hain, dikhawa nahi karta. Khol doon?',
+    },
+    actionLabel: { en: 'Open Game Zone', hi: 'Game Zone kholo' },
   },
   {
     id: 'ui-themes',
@@ -314,14 +350,38 @@ const PRICING_REPLY: JoyText = {
   hi: 'Pricing 💰 — Digital Greetings ke animated cards ₹47 se shuru hote hain (India; bahar ke liye $2+), aur ek FREE Welcome Card bhi hai. ReportCard Studio ke plans ₹369 / ₹578 / ₹859 (6 months) hain, pehli 7 report generations free. Kis cheez ka exact price chahiye?',
 };
 
+/*
+ * Built from the section list itself, so this can never drift out of date: the
+ * live ones are named with what they do, and the rest are honestly “coming
+ * soon” rather than quietly missing.
+ */
+const liveSectionLine = (): string =>
+  mallSections
+    .filter((section) => section.available)
+    .map((section) => `${section.emoji} ${section.name}`)
+    .join(', ');
+
+const comingSoonLine = (): string =>
+  mallSections
+    .filter((section) => !section.available)
+    .map((section) => section.name)
+    .join(', ');
+
 const HELP_REPLY: JoyText = {
-  en: 'I’m Joy, the assistant here at Ishmaverse. Two sections are live right now: 💌 Digital Greetings (animated cards, plus a FREE welcome card) and 📊 ReportCard Studio (Excel in, report cards out). The rest are coming soon. Just tell me what you’re looking for and I’ll take you straight there.',
-  hi: 'Main Joy hoon, Ishmaverse ki assistant. Abhi do sections live hain: 💌 Digital Greetings (animated cards + ek FREE welcome card) aur 📊 ReportCard Studio (Excel se report cards). Baaki coming soon hain. Aap jo dhoondh rahe ho bata dijiye, main seedha wahan le chalti hoon.',
+  en: `I’m Joy, the assistant here at Ishmaverse. Live right now: ${liveSectionLine()} — animated greeting cards (including a FREE Welcome Card you can send again and again), print-ready report cards from an Excel mark sheet (7 free generations per account), and Game Zone’s Pair-3Balls against the computer, a friend or a real opponent. Still “coming soon”: ${comingSoonLine()}. Ask me about prices, payment, fonts and music, card lifetime, or what usually goes wrong in any section — name a section or a problem and I’ll answer it or take you straight there.`,
+  hi: `Main Joy hoon, Ishmaverse ki assistant. Abhi live: ${liveSectionLine()} — animated greeting cards (FREE Welcome Card bhi, jo aap baar baar bhej sakte ho), Excel mark sheet se print-ready report cards (per account 7 free generations), aur Game Zone me Pair-3Balls (computer, dost ya asli opponent ke saath). “Coming soon”: ${comingSoonLine()}. Price, payment, font aur music, card kitni der live rehta hai, ya kisi bhi section me kya gadbad hoti hai — section ka naam ya problem bolo, main jawab deti hoon ya seedha wahan le chalti hoon.`,
 };
 
+/**
+ * Polite off-topic redirect.
+ *
+ * When someone asks something that has nothing to do with the mall, Joy does
+ * not pretend or guess — she says (nicely, in the visitor's own language) that
+ * she can only help with Ishmaverse, then lists what she *can* do.
+ */
 const FALLBACK_REPLY: JoyText = {
-  en: 'I can help you find any section of Ishmaverse, check prices, or take you to the founder’s profile. What would you like?',
-  hi: 'Main aapko Ishmaverse ka koi bhi section dhundhne me, price batane me, ya founder ke profile tak le jaane me madad kar sakti hoon. Aap kya chahenge?',
+  en: 'I’m Joy, the Ishmaverse assistant — I can only help with things here on Ishmaverse. Ask me about our greeting cards, ReportCard Studio, prices, or where to find a section, and I’ll take you straight there.',
+  hi: 'Main Joy hoon, Ishmaverse ki assistant — main sirf Ishmaverse se judi cheezon me madad kar sakti hoon. Greeting cards, ReportCard Studio, price, ya koi section kahan hai — ye poochhiye, main seedha wahan le chalti hoon.',
 };
 
 export const getFallback = (lang: JoyLang): string => pick(FALLBACK_REPLY, lang);
@@ -349,6 +409,81 @@ const toRegexes = (words: string[]): RegExp[] =>
 
 const anyMatch = (text: string, regexes: RegExp[]): boolean => regexes.some((re) => re.test(text));
 
+const tokensOf = (text: string): string[] => text.split(' ').filter(Boolean);
+
+/**
+ * Optimal-string-alignment distance (Levenshtein + adjacent transposition).
+ *
+ * A transposition counts as one edit, so "reprot" → "report" and "markshet" →
+ * "marksheet" are one typo, not two.
+ */
+export const editDistance = (a: string, b: string): number => {
+  if (a === b) return 0;
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  let prev2: number[] = [];
+  let prev: number[] = Array.from({ length: cols }, (_, j) => j);
+  for (let i = 1; i < rows; i++) {
+    const current: number[] = [i];
+    for (let j = 1; j < cols; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let value = Math.min(prev[j] + 1, current[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        value = Math.min(value, prev2[j - 2] + 1);
+      }
+      current[j] = value;
+    }
+    prev2 = prev;
+    prev = current;
+  }
+  return prev[cols - 1];
+};
+
+/** How many typos a keyword of this length may carry before we stop trusting it. */
+const typoBudget = (word: string): number =>
+  word.length >= 9 ? 2 : word.length >= 5 ? 1 : 0;
+
+/**
+ * Typo-tolerant keyword search, used only after the exact matcher misses.
+ *
+ * This is what lets Joy understand "reprot card kaha hai", "greeeting price" or
+ * "markshet banao" instead of falling back to the "I only help with Ishmaverse"
+ * message. Multi-word keywords are matched over a sliding window of query
+ * tokens, and a keyword only counts when it is *not* an exact match (those are
+ * handled by the faster regex path) and stays inside its typo budget.
+ */
+export const fuzzyKeywordMatch = (tokens: string[], keywords: string[]): string | null => {
+  for (const keyword of keywords) {
+    const parts = keyword.split(' ').filter(Boolean);
+    if (parts.length === 0 || tokens.length < parts.length) continue;
+    for (let start = 0; start + parts.length <= tokens.length; start++) {
+      let distance = 0;
+      let usable = true;
+      for (let offset = 0; offset < parts.length; offset++) {
+        const typed = tokens[start + offset];
+        const expected = parts[offset];
+        if (typed === expected) continue;
+        const budget = typoBudget(expected);
+        const d = editDistance(typed, expected);
+        if (budget === 0 || d > budget) {
+          usable = false;
+          break;
+        }
+        distance += d;
+      }
+      if (usable && distance > 0) return keyword;
+    }
+  }
+  return null;
+};
+
+/**
+ * True when the text hits a phrase bank — first by exact word match, then (only
+ * if that misses) by tolerating a typo or two.
+ */
+const bankHit = (text: string, tokens: string[], exact: RegExp[], words: string[]): boolean =>
+  anyMatch(text, exact) || fuzzyKeywordMatch(tokens, words) !== null;
+
 const OPEN_RE = toRegexes(OPEN_WORDS);
 const WHERE_RE = toRegexes(WHERE_WORDS);
 const PRICING_RE = toRegexes(PRICING_WORDS);
@@ -360,7 +495,6 @@ const HINGLISH_RE = toRegexes(HINGLISH_MARKERS);
 const TOPIC_REGEXES = new Map<string, RegExp[]>(
   JOY_TOPICS.map((topic) => [topic.id, toRegexes(topic.keywords)]),
 );
-
 /** "show me how to use this" — a walkthrough request rather than a lookup. */
 const GUIDE_WORDS = [
   'how do i', 'how to', 'how can i', 'how do you', 'guide', 'guide me', 'walk me',
@@ -369,14 +503,143 @@ const GUIDE_WORDS = [
   'kaise', 'kaisa', 'kese', 'kaise kare', 'kaise karu', 'kaise use', 'use kaise', 'samjhao',
   'samjao', 'samjha do', 'batao kaise', 'madad karo', 'kya karu', 'kya karna', 'shuru kaise',
 ];
-
 const GUIDE_RE = toRegexes(GUIDE_WORDS);
+
 const FAQ_MATCHERS = JOY_FAQ.map((entry: JoyFaqEntry) => toRegexes(entry.keywords));
+
+/* ------------------------------------------------------------------ */
+/* Admin boundary (Public Joy)                                        */
+/* ------------------------------------------------------------------ */
+
+/** Where the admin sign-in page lives. */
+export const ADMIN_ROUTE = '/admin';
+
+/**
+ * Words that mean the visitor wants the admin area. Public Joy never opens the
+ * dashboard itself — she explains that authentication is required and offers
+ * the sign-in page.
+ */
+const ADMIN_WORDS = [
+  'admin', 'administrator', 'admin panel', 'admin dashboard', 'dashboard', 'control panel',
+  'backend', 'back end', 'admin login', 'admin sign in', 'admin signin', 'manage products',
+  'manage the site', 'site settings', 'upload product', 'admin area', 'admin account',
+];
+
+/**
+ * Privileged actions the public chat must never perform.
+ *
+ * These are patterns, not fixed phrases, because a request can be worded many
+ * ways ("change product XYZ's price", "update the price of …", "delete product
+ * …"). The verb must sit near a collection noun (or carry a price) so ordinary
+ * visitor questions are not misread as admin requests.
+ */
+const ADMIN_MUTATION_PATTERNS: RegExp[] = [
+  /\b(delete|remove|add|create|edit|update|publish|unpublish)\b[^.!?]{0,40}\b(product|theme|track|music|song|item|catalogue|catalog|store)\b/i,
+  /\b(change|set|update|badlo|badal)\b[^.!?]{0,30}\bprice\b[^.!?]{0,20}\d/i,
+  /\bprice\b[^.!?]{0,20}\b(to|se|ko)\b[^.!?]{0,10}\d/i,
+  /\b(make|grant|give)\b[^.!?]{0,20}\bme\b[^.!?]{0,15}\badmin\b/i,
+  /\badmin\b[^.!?]{0,20}\b(access|rights|permission|permissions)\b/i,
+];
+
+const ADMIN_RE = toRegexes(ADMIN_WORDS);
+
+/** True when the message asks for the admin area (in any phrasing). */
+export const isAdminAccessQuery = (raw: string): boolean => {
+  const text = normalize(raw);
+  if (!text) return false;
+  return anyMatch(text, ADMIN_RE) || ADMIN_MUTATION_PATTERNS.some((re) => re.test(text));
+};
+
+/** True when the message asks Public Joy to perform a privileged action. */
+export const isAdminMutationRequest = (raw: string): boolean => {
+  const text = normalize(raw);
+  return text.length > 0 && ADMIN_MUTATION_PATTERNS.some((re) => re.test(text));
+};
+
+export const ADMIN_ACCESS_REPLY: JoyText = {
+  en: 'The admin dashboard is a private area, so it needs a signed-in administrator account. I can open the admin sign-in page for you; the admin assistant is available only inside that authenticated dashboard. I cannot perform admin actions from the public site.',
+  hi: 'Admin dashboard ek private area hai, isliye iske liye signed-in administrator account chahiye. Main aapke liye admin sign-in page khol sakti hoon; admin assistant sirf usi authenticated dashboard ke andar milta hai. Public site se main admin actions nahi kar sakti.',
+};
+
+export const ADMIN_MUTATION_REFUSAL: JoyText = {
+  en: 'That is an administrative action. I can only do it inside an authenticated admin session — never from the public chat. I can open the admin sign-in page; sign in and ask again inside the dashboard.',
+  hi: 'Ye ek administrative action hai. Main ise sirf authenticated admin session me kar sakti hoon — public chat se kabhi nahi. Main admin sign-in page khol sakti hoon; sign in karke dashboard ke andar dobara poochhiye.',
+};
+
+export const ADMIN_ACTION_LABEL: JoyText = {
+  en: 'Open admin sign-in',
+  hi: 'Admin sign-in kholo',
+};
+
+/* ------------------------------------------------------------------ */
+/* Pair-3Balls: Joy explains the rules and nothing else                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Joy is a RULES EXPLAINER, not a gameplay coach.
+ *
+ * Asking what the rules are is welcome: "how do I win?", "timer kitne seconds
+ * ka hai?", "movement phase kaise chalti hai?". Asking for help PLAYING is
+ * refused: move suggestions, board analysis, blocking advice, opponent
+ * weaknesses, "which point should I choose", "how do I beat the computer".
+ *
+ * Detection needs an advice word together with a game signal (or one of the
+ * unmistakable phrases), so a genuine rules question like "how do I win" is
+ * never swallowed by the refusal, while "give me a winning tip" always is.
+ */
+const GAME_CONTEXT_WORDS = [
+  'pair 3 balls', 'pair3balls', 'pair-3balls', 'game zone', 'gamezone',
+  'board', 'piece', 'opponent', 'computer', 'khel', 'turn',
+];
+
+const GAME_ADVICE_WORDS = [
+  'tip', 'tips', 'hint', 'hints', 'advice', 'suggest', 'suggestion', 'recommend',
+  'strategy', 'strategies', 'strategic', 'tactics', 'tactic', 'tactical',
+  'best move', 'next move', 'winning move', 'which move', 'what move',
+  'how to beat', 'how do i beat', 'beat the', 'help me win', 'win this game',
+  'weakness', 'analyse the board', 'analyze the board',
+];
+
+/**
+ * Phrases that are advice requests on their own, with no other game word
+ * needed. Deliberately excludes bare "how do i win" and "kaise khelte hain",
+ * which are legitimate RULES questions.
+ */
+const GAME_STRATEGY_PHRASES = [
+  'best move', 'next move', 'winning move', 'winning strategy', 'best strategy',
+  'where should i move', 'where should i place', 'which point', 'what point',
+  'should i move', 'should i place', 'should i choose', 'how to block',
+  'block the opponent', 'help me win', 'win this game', 'give me a hint',
+  'give me a tip', 'give me advice', 'any tips', 'any hints',
+  'kya khelu', 'chaal batao', 'move batao', 'tip do', 'hint do', 'koi tip',
+  'koi hint', 'jeetne ke liye kya', 'madad karo jeetne', 'kaunsa point',
+  'konsa point', 'kaun sa point',
+];
+
+/** True when the visitor is asking Joy to help them PLAY rather than to explain. */
+export const isGameStrategyQuery = (raw: string): boolean => {
+  const text = normalize(raw);
+  if (!text) return false;
+
+  if (GAME_STRATEGY_PHRASES.some((phrase) => text.includes(phrase))) return true;
+
+  const hasContext = GAME_CONTEXT_WORDS.some((word) => text.includes(word));
+  const hasAdvice = GAME_ADVICE_WORDS.some((word) => text.includes(word));
+  return hasContext && hasAdvice;
+};
+
+export const GAME_STRATEGY_REFUSAL: JoyText = {
+  en: 'I can explain the official Pair-3Balls rules, but I cannot help with the play itself — no move suggestions, no board analysis and no winning strategies. That would be coaching rather than rules, and it would be unfair in an online match. What I can do is describe the rules: nine points joined by lines, three pieces each, place them first and then step a piece along a line to an empty point, three in a row wins, and every turn has a 60-second timer.',
+  hi: 'Main Pair-3Balls ke official rules samjha sakti hoon, par khel me madad nahi kar sakti — na move suggestion, na board analysis, na jeetne ki strategy. Wo coaching hoti, rules nahi — aur online match me ye galat hoga. Haan, rules main zaroor bata sakti hoon: nau points lines se jude hue, teen-teen pieces, pehle place karo aur phir apna piece line se jude khaali point par step karo, teen line me bane to jeet, aur har turn par 60 second ka timer.',
+};
+
+/* The FAQ_MATCHERS reference is intentionally kept above the admin block so the
+ * admin route is decided first inside resolveJoyQuery (security before replies). */
 
 /** True when the message is asking to be taught how to use something. */
 export const isGuideQuery = (raw: string): boolean => {
   const text = normalize(raw);
-  return text.length > 0 && anyMatch(text, GUIDE_RE);
+  return text.length > 0 && bankHit(text, tokensOf(text), GUIDE_RE, GUIDE_WORDS);
 };
 
 /**
@@ -403,12 +666,40 @@ export const resolveJoyGuide = (
 export const getSectionChips = (sectionId?: string): JoyText[] =>
   getSectionGuide(sectionId)?.chips ?? [];
 
+/**
+ * Best FAQ hit for a message, with the length of the keyword that matched.
+ *
+ * Length is what breaks ties: a specific question ("free vs paid card") must
+ * beat a generic one ("free"). Returns null when nothing matches.
+ */
+const matchFaq = (text: string, tokens: string[]): { index: number; length: number } | null => {
+  let bestIndex = -1;
+  let bestLen = 0;
+
+  JOY_FAQ.forEach((entry, index) => {
+    for (const re of FAQ_MATCHERS[index]) {
+      const match = text.match(re);
+      if (match && match[0].length > bestLen) {
+        bestLen = match[0].length;
+        bestIndex = index;
+      }
+    }
+    const fuzzy = fuzzyKeywordMatch(tokens, entry.keywords);
+    if (fuzzy && fuzzy.length > bestLen) {
+      bestLen = fuzzy.length;
+      bestIndex = index;
+    }
+  });
+
+  return bestIndex >= 0 ? { index: bestIndex, length: bestLen } : null;
+};
+
 /** Answers a product question (free card, payment, receipt, plans, …). */
 export const resolveJoyFaq = (raw: string, lang: JoyLang): string | null => {
   const text = normalize(raw);
   if (!text) return null;
-  const index = FAQ_MATCHERS.findIndex((matchers) => anyMatch(text, matchers));
-  return index >= 0 ? pick(JOY_FAQ[index].reply, lang) : null;
+  const hit = matchFaq(text, tokensOf(text));
+  return hit ? pick(JOY_FAQ[hit.index].reply, lang) : null;
 };
 
 /**
@@ -421,7 +712,7 @@ export const detectJoyLanguage = (raw: string): JoyLang =>
 /** True when the visitor is asking about the founder / owner. */
 export const isFounderQuery = (raw: string): boolean => {
   const text = normalize(raw);
-  return text.length > 0 && anyMatch(text, FOUNDER_RE);
+  return text.length > 0 && bankHit(text, tokensOf(text), FOUNDER_RE, FOUNDER_WORDS);
 };
 
 /** Reads a short yes/no answer (used by the founder confirmation step). */
@@ -433,10 +724,20 @@ export const parseConfirmation = (raw: string): 'yes' | 'no' | null => {
   return null;
 };
 
-/** Longest keyword that the text actually contains (multi-word matches win). */
-const matchTopic = (text: string): JoyTopic | null => {
+/**
+ * Longest keyword the text actually contains (multi-word matches win).
+ *
+ * Runs the exact matcher first. Only when it finds nothing does it retry with the
+ * typo-tolerant matcher, so a correct spelling always beats a fuzzy guess.
+ *
+ * The matched keyword's length is returned alongside the topic so a more
+ * specific answer (an FAQ) can outrank a broad destination keyword such as
+ * "card".
+ */
+const matchTopic = (text: string): { topic: JoyTopic; length: number } | null => {
   let best: JoyTopic | null = null;
   let bestLen = 0;
+  /* Exact pass — a correct spelling always gets first say. */
   for (const topic of JOY_TOPICS) {
     for (const re of TOPIC_REGEXES.get(topic.id) ?? []) {
       const match = text.match(re);
@@ -446,7 +747,20 @@ const matchTopic = (text: string): JoyTopic | null => {
       }
     }
   }
-  return best;
+  /*
+   * A typo-tolerant match that is LONGER than the best exact match wins, because
+   * it carries more of the intent: "reprot card" (fuzzy, 11 chars) must beat the
+   * exact word "card" (4 chars) and land on ReportCard Studio.
+   */
+  const tokens = tokensOf(text);
+  for (const topic of JOY_TOPICS) {
+    const hit = fuzzyKeywordMatch(tokens, topic.keywords);
+    if (hit && hit.length > bestLen) {
+      best = topic;
+      bestLen = hit.length;
+    }
+  }
+  return best ? { topic: best, length: bestLen } : null;
 };
 
 export type JoyResolution =
@@ -459,7 +773,31 @@ export type JoyResolution =
       actionLabel: string;
     }
   | { kind: 'pricing'; reply: string }
-  | { kind: 'help'; reply: string };
+  | { kind: 'help'; reply: string }
+  /** Admin access: authenticated area; Public Joy only points at sign-in. */
+  | { kind: 'admin'; reply: string; route: string; actionLabel: string };
+
+/**
+ * Resolves an admin-area request for Public Joy.
+ *
+ * This is the public/admin separation boundary: a visitor is told that
+ * authentication is required and is offered the sign-in route. No privileged
+ * action is ever performed here, and claiming to be an admin changes nothing —
+ * the reply is identical for everyone.
+ */
+export const resolveAdminAccess = (raw: string, lang: JoyLang = 'en'): {
+  reply: string;
+  route: string;
+  actionLabel: string;
+} | null => {
+  if (!isAdminAccessQuery(raw)) return null;
+  const mutation = isAdminMutationRequest(raw);
+  return {
+    reply: pick(mutation ? ADMIN_MUTATION_REFUSAL : ADMIN_ACCESS_REPLY, lang),
+    route: ADMIN_ROUTE,
+    actionLabel: pick(ADMIN_ACTION_LABEL, lang),
+  };
+};
 
 /**
  * Resolves a visitor's message into an answer + an optional navigation target.
@@ -470,10 +808,39 @@ export const resolveJoyQuery = (raw: string, lang: JoyLang = 'en'): JoyResolutio
   const text = normalize(raw);
   if (!text) return null;
 
-  const topic = matchTopic(text);
-  const wantsOpen = anyMatch(text, OPEN_RE);
-  const wantsWhere = anyMatch(text, WHERE_RE);
-  const wantsPrice = anyMatch(text, PRICING_RE);
+  /*
+   * Admin requests are handled before any product navigation, so the public
+   * assistant can never be talked into opening privileged tools. It only ever
+   * points at the authenticated sign-in page.
+   */
+  const admin = resolveAdminAccess(raw, lang);
+  if (admin) {
+    return { kind: 'admin', reply: admin.reply, route: admin.route, actionLabel: admin.actionLabel };
+  }
+
+  /*
+   * Pair-3Balls: rules yes, coaching no. Checked before any topic/FAQ match so
+   * "what is the best move?" and "give me a hint" can never be answered with a
+   * rules explanation that reads like advice.
+   */
+  if (isGameStrategyQuery(raw)) {
+    return { kind: 'help', reply: pick(GAME_STRATEGY_REFUSAL, lang) };
+  }
+
+  const tokens = tokensOf(text);
+  const topicHit = matchTopic(text);
+  const faqHit = matchFaq(text, tokens);
+  const wantsOpen = bankHit(text, tokens, OPEN_RE, OPEN_WORDS);
+  const wantsWhere = bankHit(text, tokens, WHERE_RE, WHERE_WORDS);
+  const wantsPrice = bankHit(text, tokens, PRICING_RE, PRICING_WORDS);
+
+  /*
+   * A more specific product question ("how long is my card live?") beats a
+   * broad destination keyword ("card"), otherwise Joy would always answer with
+   * "that section is over there" and never explain anything.
+   */
+  const topic =
+    topicHit && !(faqHit && faqHit.length > topicHit.length) ? topicHit.topic : null;
 
   if (topic) {
     const base = pick(topic.reply, lang);
@@ -497,15 +864,14 @@ export const resolveJoyQuery = (raw: string, lang: JoyLang = 'en'): JoyResolutio
   }
 
   /*
-   * No destination matched, so treat it as a question and answer it: free
-   * card, payment methods, receipts/bills, sign-in, plans, renewals, card
-   * lifetime. These are the things people actually get stuck on.
+   * No destination matched, so treat it as a question and answer it: free card,
+   * payment methods, receipts/bills, sign-in, plans, renewals, card lifetime,
+   * tiers, photos, support. These are the things people actually get stuck on.
    */
-  const faq = resolveJoyFaq(raw, lang);
-  if (faq) return { kind: 'help', reply: faq };
+  if (faqHit) return { kind: 'help', reply: pick(JOY_FAQ[faqHit.index].reply, lang) };
 
   if (wantsPrice) return { kind: 'pricing', reply: pick(PRICING_REPLY, lang) };
-  if (anyMatch(text, HELP_RE) || (wantsWhere && wantsOpen)) {
+  if (bankHit(text, tokens, HELP_RE, HELP_WORDS) || (wantsWhere && wantsOpen)) {
     return { kind: 'help', reply: pick(HELP_REPLY, lang) };
   }
 

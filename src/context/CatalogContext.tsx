@@ -17,12 +17,14 @@ import {
   fetchRemoteThemeCatalog,
   fetchRemoteThemePrices,
   loadCatalogState,
+  mergeRemoteCatalog,
   normalizeProduct,
   persistCatalogState,
   pushRemoteCustomTheme,
   pushRemoteProduct,
   pushRemoteThemeOverride,
   pushRemoteThemePrice,
+  RemoteWriteResult,
   removeRemoteCustomTheme,
   removeRemoteProduct,
   removeRemoteThemePrice,
@@ -39,6 +41,13 @@ interface CatalogContextType {
   /** Live store product list. */
   products: Product[];
   loading: boolean;
+  /**
+   * Set when the last server write was rejected (e.g. the signed-in account is
+   * not a Supabase admin). The change still shows here, but it will not reach
+   * other visitors or the payment functions until the server accepts it.
+   */
+  syncWarning: string | null;
+  dismissSyncWarning: () => void;
   /** Ids of built-in themes an admin has hidden (shown so they can be restored). */
   deletedThemeIds: string[];
   /** True when an admin has deleted a built-in theme (so it can be restored). */
@@ -50,6 +59,16 @@ interface CatalogContextType {
   addProduct: (input: NewProductInput) => Product;
   updateProduct: (id: string, patch: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
+  /**
+   * Re-reads the server catalogue and applies the persisted state. Used after a
+   * server-side Admin Joy write so the dashboard reflects what the backend
+   * actually stored, rather than an optimistic local edit.
+   *
+   * `hint` names the entity that just changed; the server becomes authoritative
+   * for that one id (its local "edited by me" marker is cleared) while every
+   * unrelated in-browser edit is preserved.
+   */
+  refreshFromServer: (hint?: { kind: 'product' | 'theme'; id?: string }) => Promise<void>;
 }
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
@@ -57,11 +76,17 @@ const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
 export const CatalogProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [state, setState] = useState<CatalogState>(() => loadCatalogState());
   const [loading, setLoading] = useState(false);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   // Persist every change locally, immediately.
   useEffect(() => {
     persistCatalogState(state);
   }, [state]);
+
+  /** Records the outcome of a best-effort server write so the admin can see it. */
+  const noteWrite = useCallback((result: RemoteWriteResult) => {
+    setSyncWarning(result.ok ? null : result.error ?? 'The change could not be saved to the server.');
+  }, []);
 
   // Pull remote products, admin theme edits (incl. uploaded artwork), custom
   // themes and admin-set prices once, when Supabase is configured.
@@ -74,42 +99,15 @@ export const CatalogProvider: React.FC<{ children: ReactNode }> = ({ children })
         fetchRemoteThemeCatalog(),
       ]);
       if (!active) return;
-      setState((prev) => {
-        const next: CatalogState = { ...prev };
-        if (remoteProducts && remoteProducts.length > 0) {
-          next.products = remoteProducts;
-        }
-
-        const themePatches = { ...prev.themePatches };
-        if (remoteThemeCatalog) {
-          // Server edits first, so any edit made in this browser still wins.
-          for (const [id, override] of Object.entries(remoteThemeCatalog.overrides)) {
-            themePatches[id] = { ...override.patch, ...themePatches[id] };
-          }
-
-          const byId = new Map<string, GreetingTheme>();
-          for (const theme of remoteThemeCatalog.customThemes) byId.set(theme.id, theme);
-          for (const theme of prev.customThemes) byId.set(theme.id, theme);
-          next.customThemes = [...byId.values()];
-
-          const deleted = new Set([
-            ...prev.deletedThemeIds,
-            ...Object.entries(remoteThemeCatalog.overrides)
-              .filter(([, override]) => override.deleted)
-              .map(([id]) => id),
-          ]);
-          next.deletedThemeIds = [...deleted];
-        }
-
-        if (remotePrices) {
-          // Money always follows the server-side price table.
-          for (const [id, price] of Object.entries(remotePrices)) {
-            themePatches[id] = { ...themePatches[id], price: price.price, price_usd: price.price_usd };
-          }
-        }
-        next.themePatches = themePatches;
-        return next;
-      });
+      // Merge instead of overwrite: a price or product edit made here *after* the
+      // server row was written must survive the reload (see mergeRemoteCatalog).
+      setState((prev) =>
+        mergeRemoteCatalog(prev, {
+          products: remoteProducts,
+          themePrices: remotePrices,
+          themeCatalog: remoteThemeCatalog,
+        }),
+      );
     })();
     setLoading(false);
     return () => {
@@ -124,46 +122,61 @@ export const CatalogProvider: React.FC<{ children: ReactNode }> = ({ children })
     [state.deletedThemeIds],
   );
 
-  const addTheme = useCallback((input: CustomThemeInput): GreetingTheme => {
-    const theme = buildCustomTheme(input);
-    setState((prev) => ({
-      ...prev,
-      customThemes: [...prev.customThemes, theme],
-      deletedThemeIds: prev.deletedThemeIds.filter((id) => id !== theme.id),
-    }));
-    void pushRemoteThemePrice(theme.id, theme.price, theme.price_usd);
-    void pushRemoteCustomTheme(theme);
-    return theme;
-  }, []);
+  const addTheme = useCallback(
+    (input: CustomThemeInput): GreetingTheme => {
+      const theme = buildCustomTheme(input);
+      setState((prev) => ({
+        ...prev,
+        customThemes: [...prev.customThemes, theme],
+        deletedThemeIds: prev.deletedThemeIds.filter((id) => id !== theme.id),
+        priceEditedAt: { ...prev.priceEditedAt, [theme.id]: Date.now() },
+      }));
+      void pushRemoteThemePrice(theme.id, theme.price, theme.price_usd).then(noteWrite);
+      void pushRemoteCustomTheme(theme);
+      return theme;
+    },
+    [noteWrite],
+  );
 
-  const updateTheme = useCallback((id: string, patch: ThemePatch) => {
-    setState((prev) => {
+  const updateTheme = useCallback(
+    (id: string, patch: ThemePatch) => {
+      // The server write happens outside the state updater, so a rejected write
+      // can be reported back to the dashboard instead of being swallowed.
       if (patch.price !== undefined || patch.price_usd !== undefined) {
-        const current = applyThemePatches(prev).find((theme) => theme.id === id);
+        const current = themes.find((theme) => theme.id === id);
         void pushRemoteThemePrice(
           id,
           patch.price ?? current?.price ?? 0,
           patch.price_usd ?? current?.price_usd ?? 0,
-        );
+        ).then(noteWrite);
       }
-      const isCustom = prev.customThemes.some((theme) => theme.id === id);
-      if (isCustom) {
-        const updated = { ...prev.customThemes.find((theme) => theme.id === id)!, ...patch };
-        void pushRemoteCustomTheme(updated);
+      setState((prev) => {
+        const editedAt =
+          patch.price !== undefined || patch.price_usd !== undefined
+            ? { ...prev.priceEditedAt, [id]: Date.now() }
+            : prev.priceEditedAt;
+        const isCustom = prev.customThemes.some((theme) => theme.id === id);
+        if (isCustom) {
+          const updated = { ...prev.customThemes.find((theme) => theme.id === id)!, ...patch };
+          void pushRemoteCustomTheme(updated);
+          return {
+            ...prev,
+            priceEditedAt: editedAt,
+            customThemes: prev.customThemes.map((theme) => (theme.id === id ? updated : theme)),
+          };
+        }
+        const merged: ThemePatch = { ...prev.themePatches[id], ...patch };
+        // Publish the edit (background artwork, colours, copy…) for every visitor.
+        void pushRemoteThemeOverride(id, merged);
         return {
           ...prev,
-          customThemes: prev.customThemes.map((theme) => (theme.id === id ? updated : theme)),
+          priceEditedAt: editedAt,
+          themePatches: { ...prev.themePatches, [id]: merged },
         };
-      }
-      const merged: ThemePatch = { ...prev.themePatches[id], ...patch };
-      // Publish the edit (background artwork, colours, copy…) for every visitor.
-      void pushRemoteThemeOverride(id, merged);
-      return {
-        ...prev,
-        themePatches: { ...prev.themePatches, [id]: merged },
-      };
-    });
-  }, []);
+      });
+    },
+    [themes, noteWrite],
+  );
 
   const deleteTheme = useCallback((id: string) => {
     void removeRemoteThemePrice(id);
@@ -205,34 +218,102 @@ export const CatalogProvider: React.FC<{ children: ReactNode }> = ({ children })
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
-    setState((prev) => ({ ...prev, products: [product, ...prev.products] }));
-    void pushRemoteProduct(product);
+    setState((prev) => ({
+      ...prev,
+      products: [product, ...prev.products],
+      productEditedAt: { ...prev.productEditedAt, [product.id]: Date.now() },
+    }));
+    void pushRemoteProduct(product).then(noteWrite);
     return product;
-  }, []);
+  }, [noteWrite]);
 
-  const updateProduct = useCallback((id: string, patch: Partial<Product>) => {
-    setState((prev) => {
-      const products = prev.products.map((product) =>
-        product.id === id
-          ? normalizeProduct({ ...product, ...patch, updated_at: new Date().toISOString() })
-          : product,
-      );
-      const updated = products.find((product) => product.id === id);
-      if (updated) void pushRemoteProduct(updated);
-      return { ...prev, products };
-    });
-  }, []);
+  const updateProduct = useCallback(
+    (id: string, patch: Partial<Product>) => {
+      setState((prev) => {
+        const products = prev.products.map((product) =>
+          product.id === id
+            ? normalizeProduct({ ...product, ...patch, updated_at: new Date().toISOString() })
+            : product,
+        );
+        const updated = products.find((product) => product.id === id);
+        if (updated) void pushRemoteProduct(updated).then(noteWrite);
+        return {
+          ...prev,
+          products,
+          productEditedAt: { ...prev.productEditedAt, [id]: Date.now() },
+        };
+      });
+    },
+    [noteWrite],
+  );
 
   const deleteProduct = useCallback((id: string) => {
     setState((prev) => ({ ...prev, products: prev.products.filter((product) => product.id !== id) }));
     void removeRemoteProduct(id);
   }, []);
 
+  const dismissSyncWarning = useCallback(() => setSyncWarning(null), []);
+
+  /** Server-authoritative re-read; see `refreshFromServer` in the context type. */
+  const refreshFromServer = useCallback(
+    async (hint?: { kind: 'product' | 'theme'; id?: string }) => {
+      const [remoteProducts, remotePrices, remoteThemeCatalog] = await Promise.all([
+        fetchRemoteProducts(),
+        fetchRemoteThemePrices(),
+        fetchRemoteThemeCatalog(),
+      ]);
+
+      setState((prev) => {
+        const merged = mergeRemoteCatalog(prev, {
+          products: remoteProducts,
+          themePrices: remotePrices,
+          themeCatalog: remoteThemeCatalog,
+        });
+        if (!hint?.id) return merged;
+
+        const productEditedAt = { ...merged.productEditedAt };
+        const priceEditedAt = { ...merged.priceEditedAt };
+        if (hint.kind === 'product') {
+          delete productEditedAt[hint.id];
+        } else {
+          delete priceEditedAt[hint.id];
+          delete productEditedAt[hint.id];
+        }
+
+        let customThemes = merged.customThemes;
+        let deletedThemeIds = merged.deletedThemeIds;
+
+        if (hint.kind === 'theme') {
+          const remoteCustomIds = new Set(
+            (remoteThemeCatalog?.customThemes ?? []).map((theme) => theme.id),
+          );
+          const wasCustomLocally = prev.customThemes.some((theme) => theme.id === hint.id);
+          if (wasCustomLocally && !remoteCustomIds.has(hint.id)) {
+            // The row is gone server-side, so drop it here too.
+            customThemes = merged.customThemes.filter((theme) => theme.id !== hint.id);
+            deletedThemeIds = deletedThemeIds.filter((id) => id !== hint.id);
+          } else {
+            const hiddenOnServer = Boolean(remoteThemeCatalog?.overrides?.[hint.id]?.deleted);
+            const set = new Set(deletedThemeIds);
+            if (hiddenOnServer) set.add(hint.id);
+            else set.delete(hint.id);
+            deletedThemeIds = [...set];
+          }
+        }
+
+        return { ...merged, priceEditedAt, productEditedAt, customThemes, deletedThemeIds };
+      });
+    },
+    [],
+  );
+
   const value = useMemo<CatalogContextType>(
     () => ({
       themes,
       products: state.products,
       loading,
+      syncWarning,
+      dismissSyncWarning,
       deletedThemeIds: state.deletedThemeIds,
       isThemeDeleted,
       addTheme,
@@ -242,11 +323,14 @@ export const CatalogProvider: React.FC<{ children: ReactNode }> = ({ children })
       addProduct,
       updateProduct,
       deleteProduct,
+      refreshFromServer,
     }),
     [
       themes,
       state.products,
       loading,
+      syncWarning,
+      dismissSyncWarning,
       state.deletedThemeIds,
       isThemeDeleted,
       addTheme,
@@ -256,6 +340,7 @@ export const CatalogProvider: React.FC<{ children: ReactNode }> = ({ children })
       addProduct,
       updateProduct,
       deleteProduct,
+      refreshFromServer,
     ],
   );
 

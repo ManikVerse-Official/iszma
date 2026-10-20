@@ -15,7 +15,41 @@ import {
   buildStudentsFromRows,
 } from '../src/services/normalizationEngine';
 import ReportCardPreview from '../src/components/report/ReportCardPreview';
+import { REPORT_CARD_THEMES } from '../src/themes';
+import { mmCss, TYPE_MM } from '../src/themes/typography';
 import type { SchoolProfile, Student } from '../src/types';
+
+/*
+ * Preview half of the preview↔PDF typography parity check.
+ *
+ * The PDF half lives in regression-test.ts (it reads the font size embedded in
+ * the generated PDF). Together they prove both renderers use the same mm value:
+ * the preview writes `font-size: <x>mm` and the PDF writes `setFontSize(mmToPt(x))`.
+ * A size changed on one side alone fails one of the two checks.
+ */
+let parityFailures = 0;
+function checkTypographyParity(student: Student): void {
+  console.log('\n### typography parity (preview side)');
+  for (const theme of REPORT_CARD_THEMES) {
+    const html = renderToStaticMarkup(
+      <ReportCardPreview student={student} school={{ ...SCHOOL, reportTheme: theme.id }} />,
+    );
+    const wanted: [string, number][] = [
+      ['academic table', TYPE_MM.academic],
+      ['student info grid', TYPE_MM.info],
+      ['remarks', TYPE_MM.remarks],
+      ['footer', TYPE_MM.footer],
+    ];
+    for (const [label, mm] of wanted) {
+      const needle = `font-size:${mmCss(mm)}`;
+      if (!html.includes(needle)) {
+        console.log(`  FAIL [${theme.id}] ${label} does not use the shared size (${needle})`);
+        parityFailures++;
+      }
+    }
+  }
+  console.log(`  checked ${REPORT_CARD_THEMES.length} themes x 4 shared sizes`);
+}
 
 (globalThis as any).FileReader = class FileReader {
   result: any;
@@ -145,6 +179,8 @@ async function run(file: string) {
     .replace(/\s+/g, ' ')
     .trim();
   console.log('  text sample:', text.slice(0, 2400));
+
+  checkTypographyParity(students[0]);
 }
 
 (async () => {
@@ -158,10 +194,18 @@ async function run(file: string) {
         'testdata_alt_subjects.xlsx',
         'testdata_sheetname_class.xlsx',
         'testdata_10_students.xlsx',
+        'testdata_sbs_components.xlsx',
+        'testdata_sbs_components_no_name.xlsx',
+        'testdata_unmerged_groups.xlsx',
       ];
   for (const file of files) {
     await run(file);
   }
+  if (parityFailures > 0) {
+    console.error(`\n✗ typography parity FAILED (${parityFailures} mismatch(es))`);
+    process.exit(1);
+  }
+  console.log('\n✓ typography parity OK — preview and PDF share the same mm sizes.');
 })().catch((e) => {
   console.error('RENDER ERROR:', e);
   process.exit(1);

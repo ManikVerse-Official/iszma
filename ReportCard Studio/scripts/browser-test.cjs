@@ -1,6 +1,10 @@
 /* Full browser flow: school profile -> upload Excel -> mapping -> preview -> generate. */
 const { chromium } = require('playwright');
+const { mkdirSync, existsSync } = require('fs');
 const path = require('path');
+
+/* Screenshots are written here; the folder is scratch output, not committed. */
+mkdirSync('.tmpbuild', { recursive: true });
 
 const BASE = process.env.BASE_URL || 'http://localhost:5199';
 const EXCEL = process.env.EXCEL_FILE || 'testdata_title_class_30.xlsx';
@@ -41,6 +45,20 @@ async function runMobileChecks(browser, base) {
     else fail(`${route} scrolls sideways by ${overflow}px`);
   }
 
+  /*
+   * Every working screen needs an account, so the mobile pass has to identify
+   * itself first — otherwise /import redirects to /login and the probe fails.
+   */
+  await page.goto(base + '/login', { waitUntil: 'networkidle' });
+  await page.locator('input[type="email"]').fill('browser-mobile@example.com');
+  await page.locator('form input:not([type="email"])').first().fill('Mobile Test');
+  await page.getByRole('button', { name: /Continue/i }).click();
+  /* The desktop sidebar link is hidden on a phone, so readiness is the route. */
+  await page.waitForFunction(() => !location.pathname.startsWith('/login'), null, {
+    timeout: 30000,
+  });
+  ok('mobile pass signed in');
+
   await page.goto(base + '/import', { waitUntil: 'networkidle' });
   await page.locator('#excel-input').setInputFiles(path.join(process.cwd(), EXCEL));
   await page.waitForSelector('text=Column Mapping', { timeout: 60000 });
@@ -62,10 +80,10 @@ async function runMobileChecks(browser, base) {
   /* Stay in the same session (client-side navigation) so the imported students
    * are still in the store, then check the A4 preview on a phone width. */
   await page.locator('nav[aria-label="Main"] a', { hasText: 'Report Template' }).first().click();
-  await page.waitForSelector('.shadow-card', { timeout: 30000 });
+  await page.waitForSelector('[data-testid="report-card"]', { timeout: 30000 });
   await page.waitForTimeout(1200);
   const cardFit = await page.evaluate(() => {
-    const sheet = document.querySelector('.shadow-card');
+    const sheet = document.querySelector('[data-testid="report-card"]');
     if (!sheet) return null;
     const rect = sheet.getBoundingClientRect();
     return { width: Math.round(rect.width), viewport: window.innerWidth };
@@ -74,6 +92,97 @@ async function runMobileChecks(browser, base) {
     ok(`report card preview is scaled to the phone width (${cardFit.width}px)`);
   } else {
     fail(`preview is ${cardFit ? cardFit.width : 'missing'}px wide on a ${cardFit ? cardFit.viewport : '?'}px screen`);
+  }
+
+  /*
+   * The card must stay ONE A4 sheet. The shared typography scale raised the body
+   * text, so this guard fails if a size increase ever pushes the preview past
+   * 297mm (the PDF would then paginate while the preview would not).
+   */
+  const sheetHeight = await page.evaluate(() => {
+    const sheet = document.querySelector('[data-testid="report-card"]');
+    if (!sheet) return null;
+    return { height: sheet.offsetHeight, a4: (297 / 25.4) * 96 };
+  });
+  if (sheetHeight && sheetHeight.height <= sheetHeight.a4 + 2) {
+    ok(`preview stays on one A4 sheet (${sheetHeight.height}px of ${Math.round(sheetHeight.a4)}px)`);
+  } else {
+    fail(
+      `preview overflows A4: ${sheetHeight ? `${sheetHeight.height}px of ${Math.round(sheetHeight.a4)}px` : 'sheet missing'}`,
+    );
+  }
+
+  /*
+   * The preview frame must NOT reserve a large blank area under the card, and
+   * the bottom of the card must be reachable by scrolling. `reserved` is the
+   * scaler's layout height (what the page actually gives the preview) and
+   * `visual` is what the reader sees, so a big gap between them is exactly the
+   * "preview only fills the top of a large panel" bug.
+   */
+  const previewSpace = await page.evaluate(() => {
+    const card = document.querySelector('[data-testid="report-card"]');
+    if (!card || !card.parentElement || !card.parentElement.parentElement) return null;
+    const scaler = card.parentElement;
+    const frame = card.parentElement.parentElement;
+    return {
+      reserved: scaler.offsetHeight,
+      visual: Math.round(card.getBoundingClientRect().height),
+      frame: Math.round(frame.getBoundingClientRect().height),
+    };
+  });
+  if (
+    previewSpace &&
+    previewSpace.reserved >= previewSpace.visual - 4 &&
+    previewSpace.reserved <= previewSpace.visual + 24
+  ) {
+    ok(`preview reserves exactly the card height (${previewSpace.reserved}px vs ${previewSpace.visual}px visual)`);
+  } else {
+    fail('preview reserves the wrong height: ' + JSON.stringify(previewSpace));
+  }
+
+  /*
+   * The card must actually be PAINTED, not just present in the DOM. A collapsed
+   * (clipped) preview passes every text-based check, so it is probed with
+   * elementFromPoint — the bug this guards was a sub-pixel scaler height that
+   * clipped the whole card away.
+   */
+  const painted = await page.evaluate(() => {
+    const card = document.querySelector('[data-testid="report-card"]');
+    if (!card) return null;
+    card.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const rect = card.getBoundingClientRect();
+    const probe = (offsetY) => {
+      const x = Math.min(window.innerWidth - 2, rect.left + rect.width / 2);
+      const y = rect.top + offsetY;
+      if (y < 0 || y > window.innerHeight) return false;
+      const hit = document.elementFromPoint(x, y);
+      return Boolean(hit && card.contains(hit));
+    };
+    return {
+      rectH: Math.round(rect.height),
+      top: probe(20),
+      middle: probe(Math.round(rect.height / 2)),
+      bottom: probe(Math.max(10, rect.height - 20)),
+    };
+  });
+  if (painted && painted.top && painted.middle && painted.bottom && painted.rectH > 200) {
+    ok(`report card is painted on screen (${painted.rectH}px tall, top/middle/bottom visible)`);
+  } else {
+    fail('report card is clipped / not painted: ' + JSON.stringify(painted));
+  }
+
+  /* The lower sections must be reachable, not clipped out of the page. */
+  const reachable = await page.evaluate(() => {
+    const card = document.querySelector('[data-testid="report-card"]');
+    if (!card) return null;
+    card.scrollIntoView({ block: 'end' });
+    const rect = card.getBoundingClientRect();
+    return { bottom: Math.round(rect.bottom), top: Math.round(rect.top), viewport: window.innerHeight };
+  });
+  if (reachable && reachable.bottom <= reachable.viewport + 2) {
+    ok(`the bottom of the report card is reachable on a phone (${reachable.bottom}px)`);
+  } else {
+    fail('the bottom of the preview cannot be reached: ' + JSON.stringify(reachable));
   }
 
   const navCheck = await page.evaluate(() => {
@@ -185,12 +294,40 @@ async function runPwaChecks(browser, base) {
 
 /*
  * The bundled Playwright browser may not be downloaded on this machine; set
- * PW_CHANNEL=chrome to drive the locally installed Google Chrome instead.
+ * PW_CHANNEL=chrome to drive the locally installed Google Chrome instead, or
+ * let the launcher fall back to a system Chrome automatically.
  */
-const LAUNCH_OPTIONS = process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {};
+const CHROME_PATHS = [
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+  `${process.env.LOCALAPPDATA ?? ''}/Google/Chrome/Application/chrome.exe`,
+  '/usr/bin/google-chrome',
+];
+
+async function launchBrowser() {
+  const options = process.env.PW_CHANNEL ? [{ channel: process.env.PW_CHANNEL }, {}] : [{}];
+  for (const option of options) {
+    try {
+      return await chromium.launch(option);
+    } catch {
+      /* fall through to the next candidate */
+    }
+  }
+  for (const executablePath of CHROME_PATHS) {
+    if (!existsSync(executablePath)) continue;
+    try {
+      return await chromium.launch({ executablePath });
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  throw new Error(
+    'No usable browser: run "npx playwright install chromium", or set PW_CHANNEL=chrome.',
+  );
+}
 
 (async () => {
-  const browser = await chromium.launch(LAUNCH_OPTIONS);
+  const browser = await launchBrowser();
   const context = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
     acceptDownloads: true,
@@ -206,6 +343,18 @@ const LAUNCH_OPTIONS = process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNE
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 
   try {
+    /*
+     * 0. Sign in. Every working screen requires an account (free tries are
+     *    counted per account), so the flow has to start here or it is simply
+     *    redirected to /login.
+     */
+    await page.goto(BASE + '/login', { waitUntil: 'networkidle' });
+    await page.locator('input[type="email"]').fill('browser-test@example.com');
+    await page.locator('form input:not([type="email"])').first().fill('Browser Test');
+    await page.getByRole('button', { name: /Continue/i }).click();
+    await page.waitForSelector('a[href="/dashboard"]', { timeout: 30000 });
+    ok('signed in');
+
     /* 1. School profile */
     await page.goto(BASE + '/school-profile', { waitUntil: 'networkidle' });
     await page.getByPlaceholder('e.g. Delhi Public School').fill('SHAHEED BHAGAT SINGH PUBLIC SCHOOL');
@@ -263,7 +412,7 @@ const LAUNCH_OPTIONS = process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNE
     /* 5. Report template (holistic card) */
     await page.locator('header nav a', { hasText: 'Report Template' }).first().click();
     await page.waitForSelector('text=HOLISTIC PROGRESS REPORT CARD', { timeout: 20000 });
-    const card = page.locator('.shadow-card').first();
+    const card = page.locator('[data-testid="report-card"]').first();
     const cardText = (await card.innerText()).toUpperCase();
     for (const needle of [
       'HOLISTIC PROGRESS REPORT CARD',
@@ -272,7 +421,7 @@ const LAUNCH_OPTIONS = process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNE
       'CO-SCHOLASTIC AREAS',
       'PERSONALITY DEVELOPMENT',
       'LEARNING SKILLS',
-      'ATTENDANCE',
+      'HOLISTIC DEVELOPMENT PROFILE',
       'OVERALL PERFORMANCE',
       'Class Teacher',
       'Principal',
@@ -282,6 +431,41 @@ const LAUNCH_OPTIONS = process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNE
     }
     const box = await card.boundingBox();
     if (box) console.log('  report card px: ' + Math.round(box.width) + ' x ' + Math.round(box.height) + ' (A4 ≈ 794 x 1123)');
+
+    /*
+     * The Totals Preview card and the printed card must show the SAME numbers:
+     * total, percentage, overall grade and result all come from one model. This
+     * compares the two real renderings rather than either one against a literal.
+     */
+    const sidebarText = await page
+      .locator('div.card:has-text("Totals Preview")')
+      .first()
+      .innerText();
+    const totalMatch = sidebarText.match(/Grand Total[\s\S]{0,20}?([\d.]+)\s*\/\s*([\d.]+)/);
+    const pctMatch = sidebarText.match(/Percentage[\s\S]{0,20}?([\d.]+)%/);
+    const gradeMatch = sidebarText.match(/Overall Grade[\s\S]{0,20}?([A-Z0-9+\-]+)/);
+    const resultMatch = sidebarText.match(/Result[\s\S]{0,20}?(PROMOTED|NEEDS IMPROVEMENT)/);
+
+    if (totalMatch && cardText.includes(`${totalMatch[1]} / ${totalMatch[2]}`)) {
+      ok(`card grand total matches the sidebar (${totalMatch[1]} / ${totalMatch[2]})`);
+    } else {
+      fail('card grand total does not match the sidebar: ' + JSON.stringify(totalMatch && totalMatch[0]));
+    }
+    if (pctMatch && cardText.includes(`${pctMatch[1]}%`)) {
+      ok(`card percentage matches the sidebar (${pctMatch[1]}%)`);
+    } else {
+      fail('card percentage does not match the sidebar: ' + JSON.stringify(pctMatch && pctMatch[1]));
+    }
+    if (gradeMatch && cardText.includes(gradeMatch[1].toUpperCase())) {
+      ok(`card prints the overall grade (${gradeMatch[1]})`);
+    } else {
+      fail('card does not print the overall grade: ' + JSON.stringify(gradeMatch && gradeMatch[1]));
+    }
+    if (resultMatch && cardText.includes(resultMatch[1])) {
+      ok(`card prints the result (${resultMatch[1]})`);
+    } else {
+      fail('card does not print the result: ' + JSON.stringify(resultMatch && resultMatch[1]));
+    }
 
     if (process.env.PROBE === '1') {
       const sections = await card.evaluate((el) => {
@@ -322,7 +506,7 @@ const LAUNCH_OPTIONS = process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNE
     const checkTheme = async (id, title, required, forbidden) => {
       await themeSelect.selectOption(id);
       await page.waitForSelector('text=' + title, { timeout: 20000 });
-      const el = page.locator('.shadow-card').first();
+      const el = page.locator('[data-testid="report-card"]').first();
       const text = (await el.innerText()).toUpperCase();
       for (const needle of required) {
         if (text.includes(needle.toUpperCase())) ok(id + ' card has "' + needle + '"');

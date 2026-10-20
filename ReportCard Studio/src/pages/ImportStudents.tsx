@@ -34,7 +34,18 @@ import {
 } from '../services/normalizationEngine';
 
 import { validateStudents } from '../services/validationEngine';
-import { loadPhotoZip } from '../services/photoMatcher';
+import {
+  detectImageFormat,
+  fileToDataUrl,
+  loadPhotoZipDetailed,
+  MAX_IMAGE_BYTES,
+} from '../services/photoMatcher';
+import {
+  photoStatusLabel,
+  resolvePhotosWithOverrides,
+  type PhotoOverrides,
+  type PhotoStatus,
+} from '../services/photoOverrides';
 import { computeTotals } from '../services/calculationEngine';
 
 import { parseDynamicStructure } from '../services/dynamicExcelParser';
@@ -95,6 +106,10 @@ export default function ImportStudents() {
 
   const photoMap = useAppStore((s) => s.photoMap);
   const setPhotoMap = useAppStore((s) => s.setPhotoMap);
+  const photoOverrides = useAppStore((s) => s.photoOverrides);
+  const setPhotoOverride = useAppStore((s) => s.setPhotoOverride);
+  const resetPhotoOverride = useAppStore((s) => s.resetPhotoOverride);
+  const clearPhotoOverrides = useAppStore((s) => s.clearPhotoOverrides);
 
   const resetWorkflow = useAppStore((s) => s.resetWorkflow);
 
@@ -122,6 +137,7 @@ export default function ImportStudents() {
   const [loading, setLoading] = useState(false);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [dynamicParserFailed, setDynamicParserFailed] =
     useState<boolean>(false);
@@ -577,15 +593,23 @@ export default function ImportStudents() {
     setPhotoLoading(true);
 
     try {
-      const m = await loadPhotoZip(file);
+      const { map, duplicates, rejected } =
+        await loadPhotoZipDetailed(file);
 
-      setPhotoMap(m);
+      setPhotoMap(map);
+      /* A new ZIP is a new set of photos — stale manual picks must not survive
+       * it, or a card could print a picture the user never re-approved. */
+      clearPhotoOverrides();
       setPhotoFile(file);
+      setPhotoNotice(
+        buildPhotoNotice(duplicates, rejected),
+      );
     } catch (e) {
       setFileError(
         (e as Error).message ||
           'Failed to read photo zip',
       );
+      setPhotoNotice(null);
     } finally {
       setPhotoLoading(false);
     }
@@ -730,9 +754,12 @@ export default function ImportStudents() {
           onPhotoDrop={handlePhotoZip}
           onBack={() => setTab('subjects')}
           onContinue={buildStudentsAndValidate}
+          notice={photoNotice}
           onClear={() => {
             setPhotoMap({});
+            clearPhotoOverrides();
             setPhotoFile(null);
+            setPhotoNotice(null);
           }}
         />
       )}
@@ -745,6 +772,9 @@ export default function ImportStudents() {
           onBack={() => setTab('photos')}
           onRefresh={buildStudentsAndValidate}
           photoMap={photoMap}
+          photoOverrides={photoOverrides}
+          setPhotoOverride={setPhotoOverride}
+          resetPhotoOverride={resetPhotoOverride}
         />
       )}
     </div>
@@ -1790,6 +1820,47 @@ function SubjectsTab({
   );
 }
 
+/**
+ * Plain-language summary of what the ZIP reader ignored, so a duplicate or a
+ * renamed file is never a silent surprise. Returns null when nothing was
+ * skipped.
+ */
+function buildPhotoNotice(
+  duplicates: string[],
+  rejected: Array<{ name: string; reason: string }>,
+): string | null {
+  if (duplicates.length === 0 && rejected.length === 0) {
+    return null;
+  }
+
+  const parts: string[] = [];
+
+  if (duplicates.length > 0) {
+    parts.push(
+      `${duplicates.length} duplicate filename${
+        duplicates.length === 1 ? '' : 's'
+      } ignored (first file kept): ${duplicates
+        .slice(0, 4)
+        .join(', ')}${duplicates.length > 4 ? '…' : ''}`,
+    );
+  }
+
+  if (rejected.length > 0) {
+    const summary = rejected
+      .slice(0, 4)
+      .map((entry) => `${entry.name} (${entry.reason})`)
+      .join(', ');
+
+    parts.push(
+      `${rejected.length} file${
+        rejected.length === 1 ? '' : 's'
+      } skipped: ${summary}${rejected.length > 4 ? '…' : ''}`,
+    );
+  }
+
+  return parts.join(' · ');
+}
+
 function PhotosTab({
   photoMap,
   photoFile,
@@ -1800,6 +1871,7 @@ function PhotosTab({
   onBack,
   onContinue,
   onClear,
+  notice,
 }: {
   photoMap: Record<string, string>;
   photoFile: File | null;
@@ -1812,6 +1884,7 @@ function PhotosTab({
   onBack: () => void;
   onContinue: () => void;
   onClear: () => void;
+  notice: string | null;
 }) {
   const count = Object.keys(photoMap).length;
 
@@ -1919,6 +1992,16 @@ function PhotosTab({
               </div>
             )}
 
+            {notice && (
+              <div
+                role="status"
+                className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800"
+              >
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{notice}</span>
+              </div>
+            )}
+
             <p className="text-xs text-ink-500 border-t border-slate-100 pt-2 mt-2">
               Matching logic:
             </p>
@@ -1970,6 +2053,9 @@ function PreviewTab({
   onBack,
   onRefresh,
   photoMap,
+  photoOverrides,
+  setPhotoOverride,
+  resetPhotoOverride,
 }: {
   students: {
     studentId: string;
@@ -2017,7 +2103,67 @@ function PreviewTab({
   onBack: () => void;
   onRefresh: () => void;
   photoMap: Record<string, string>;
+  photoOverrides: PhotoOverrides;
+  setPhotoOverride: (studentId: string, dataUrl: string | null) => void;
+  resetPhotoOverride: (studentId: string) => void;
 }) {
+  /*
+   * Every photo file in the uploaded ZIP, listed once (the ZIP loader registers
+   * several aliases per file, so entries are de-duplicated by data URL). These
+   * are the pictures the user may assign manually — no new upload is needed, so
+   * the ZIP's own path/format validation still applies.
+   */
+  const photoLibrary = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const [label, url] of Object.entries(photoMap)) {
+      if (!url || seen.has(url)) continue;
+      seen.set(url, /\.[a-z0-9]+$/i.test(label) ? label : `${label}.jpg`);
+    }
+    return [...seen.entries()].map(([url, label]) => ({ url, label }));
+  }, [photoMap]);
+
+  /** One-off photo for a single student, validated the same way the ZIP is. */
+  const [attachingFor, setAttachingFor] = useState<string | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
+
+  /** Value of the per-row picker: auto / cleared / a specific ZIP photo. */
+  const pickerValue = (studentId: string): string => {
+    if (!Object.prototype.hasOwnProperty.call(photoOverrides, studentId)) return '__auto';
+    const override = photoOverrides[studentId];
+    if (override === null) return '__clear';
+    const index = photoLibrary.findIndex((entry) => entry.url === override);
+    return index >= 0 ? `lib:${index}` : '__manual';
+  };
+
+  const handleSinglePhoto = async (file: File) => {
+    const studentId = attachingFor;
+    setAttachError(null);
+    if (!studentId) return;
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      setAttachError(
+        `That photo is ${Math.round(file.size / (1024 * 1024))} MB — please keep it under ${Math.round(
+          MAX_IMAGE_BYTES / (1024 * 1024),
+        )} MB.`,
+      );
+      return;
+    }
+
+    try {
+      /* Trust the bytes, not the extension. */
+      const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+      if (detectImageFormat(head) === null) {
+        setAttachError('That file is not a readable image (JPG, PNG, WEBP, GIF or BMP).');
+        return;
+      }
+      setPhotoOverride(studentId, await fileToDataUrl(file));
+    } catch {
+      setAttachError('That photo could not be read. Please try another file.');
+    } finally {
+      setAttachingFor(null);
+    }
+  };
   const [selectedId, setSelectedId] =
     useState<string>(
       students[0]?.studentId || '',
@@ -2038,6 +2184,47 @@ function PreviewTab({
   const selectedTotals = selected
     ? computeTotals(selected as unknown as Student)
     : null;
+
+  /**
+   * The SAME resolver the PDF generator uses — with the user's manual
+   * corrections applied — so this table can never promise a photo that
+   * generation would refuse to attach, nor hide one it would attach.
+   */
+  const photoReview = useMemo(() => {
+    const { photos, status, conflicts } = resolvePhotosWithOverrides(
+      students.map((student) => ({
+        studentId: student.studentId,
+        rowNumber: student.rowNumber,
+        rollNo: student.rollNo,
+        name: student.name,
+        admissionNo: student.admissionNo,
+        photoFilename: student.photoFilename,
+      })),
+      photoMap,
+      photoOverrides,
+    );
+
+    const rows = students.map((student) => ({
+      student,
+      photo: photos.get(student.studentId),
+      status: (status.get(student.studentId) ?? 'missing') as PhotoStatus,
+    }));
+
+    return {
+      rows,
+      conflicts,
+      confirmed: rows.filter((r) => r.status === 'matched').length,
+      manual: rows.filter((r) => r.status === 'manual').length,
+      cleared: rows.filter((r) => r.status === 'cleared').length,
+      review: rows.filter((r) => r.status === 'ambiguous').length,
+      missing: rows.filter((r) => r.status === 'missing').length,
+    };
+  }, [photoMap, students, photoOverrides]);
+
+  const selectedPhotoStatus: PhotoStatus =
+    photoReview.rows.find(
+      (row) => row.student.studentId === selected?.studentId,
+    )?.status ?? 'missing';
 
   const exportErrors = () => {
     if (
@@ -2339,6 +2526,17 @@ function PreviewTab({
                             )}
 
                             {i.message}
+                            {i.reason && (
+                              <span className="block text-xs text-red-700/80 mt-0.5">
+                                {i.confirmed === false ? 'Possible cause: ' : 'Cause: '}
+                                {i.reason}
+                              </span>
+                            )}
+                            {i.suggestion && (
+                              <span className="block text-xs text-ink-600 mt-0.5">
+                                Fix: {i.suggestion}
+                              </span>
+                            )}
                           </span>
                         </li>
                       ),
@@ -2564,37 +2762,19 @@ function PreviewTab({
 
             {selected && (
               <div className="pt-2 border-t border-slate-100 text-xs text-ink-500">
-                {Object.keys(photoMap)
-                  .length > 0
-                  ? selected.photoFilename &&
-                    photoMap[
-                      selected.photoFilename
-                    ]
-                    ? (
-                      <span className="text-emerald-700 flex items-center gap-1">
-                        <ImageIcon className="h-3.5 w-3.5" />
-                        Photo matched by filename
-                      </span>
-                    )
-                    : photoMap[
-                        selected.rollNo
-                      ] ||
-                      photoMap[
-                        `${selected.rollNo}.jpg`
-                      ]
-                    ? (
-                      <span className="text-emerald-700 flex items-center gap-1">
-                        <ImageIcon className="h-3.5 w-3.5" />
-                        Photo matched by roll number
-                      </span>
-                    )
-                    : (
-                      <span className="text-amber-700 flex items-center gap-1">
-                        <ImageIcon className="h-3.5 w-3.5" />
-                        No photo matched
-                      </span>
-                    )
-                  : 'No photo ZIP uploaded — blank photo box on report.'}
+                <span
+                  className={clsx(
+                    'flex items-center gap-1',
+                    selectedPhotoStatus === 'matched' || selectedPhotoStatus === 'manual'
+                      ? 'text-emerald-700'
+                      : selectedPhotoStatus === 'cleared'
+                        ? 'text-ink-500'
+                        : 'text-amber-700',
+                  )}
+                >
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  {photoStatusLabel(selectedPhotoStatus)}
+                </span>
               </div>
             )}
 
@@ -2606,6 +2786,209 @@ function PreviewTab({
                 </div>
               )}
           </div>
+        </div>
+      </div>
+
+      {/*
+        Photo review + manual correction. Built from the SAME resolver the PDF
+        generator uses (with the manual choices applied), so a row that says
+        "Confirmed" here is really the photograph that will be printed.
+      */}
+      <div className="card">
+        <div className="card-header flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold text-ink-900">
+            Student photo review
+          </h3>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              {photoReview.confirmed} matched
+            </span>
+            {photoReview.manual > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200">
+                {photoReview.manual} set manually
+              </span>
+            )}
+            {photoReview.cleared > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-slate-50 text-ink-600 border border-slate-200">
+                {photoReview.cleared} cleared
+              </span>
+            )}
+            {photoReview.review > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                {photoReview.review} need review
+              </span>
+            )}
+            {photoReview.missing > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-slate-50 text-ink-600 border border-slate-200">
+                {photoReview.missing} missing
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="card-body overflow-x-auto">
+          <p className="text-xs text-ink-500 mb-3">
+            {photoLibrary.length > 0
+              ? `Photos are matched by identity (workbook filename, roll number, admission number or an exact name) — never by upload order. ${photoLibrary.length} distinct photo${photoLibrary.length === 1 ? '' : 's'} loaded. Use “Change photo” on any row to pick a different picture, attach one from this computer, or clear the photo for that student.`
+              : 'No photo ZIP uploaded yet — every card prints with a blank photo box. Use “Change photo → Attach” on a row to add a single photo, or upload a ZIP in step 4.'}
+          </p>
+
+          {attachError && (
+            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+              {attachError}
+            </p>
+          )}
+
+          {photoReview.review > 0 && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+              {photoReview.review} student
+              {photoReview.review === 1 ? '' : 's'} could not be matched with
+              certainty (the same photo fits more than one child, or the
+              identifier conflicts). Those report cards print with the blank
+              photo box — a wrong photograph is worse than none. Rename the
+              photo to the student&apos;s roll number, or fix the Roll No
+              column, and import the ZIP again — or choose the correct photo by
+              hand in the table below.
+            </p>
+          )}
+
+          {photoReview.conflicts.length > 0 && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+              You chose the same picture for {photoReview.conflicts.length}{' '}
+              students. Your choice is used exactly as made — check that each
+              child really has that photo.
+            </p>
+          )}
+
+          <input
+            ref={attachRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleSinglePhoto(file);
+              if (attachRef.current) attachRef.current.value = '';
+            }}
+          />
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-ink-500">
+                <th className="py-1 pr-3">Roll No</th>
+                <th className="py-1 pr-3">Student</th>
+                <th className="py-1 pr-3">Photo</th>
+                <th className="py-1 pr-3">Status</th>
+                <th className="py-1">Change photo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {photoReview.rows.map(({ student, photo, status }) => (
+                <tr
+                  key={student.studentId}
+                  className="border-t border-slate-100"
+                >
+                  <td className="py-2 pr-3 font-medium text-ink-800">
+                    {student.rollNo || '—'}
+                  </td>
+                  <td className="py-2 pr-3 text-ink-700">
+                    {student.name}
+                  </td>
+                  <td className="py-2 pr-3">
+                    {photo ? (
+                      <img
+                        src={photo}
+                        alt=""
+                        className="h-10 w-10 rounded-md object-cover border border-slate-200"
+                      />
+                    ) : (
+                      <span className="text-ink-400">—</span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <span
+                      className={clsx(
+                        status === 'matched' && 'text-emerald-700',
+                        status === 'manual' && 'text-brand-700',
+                        status === 'cleared' && 'text-ink-500',
+                        (status === 'ambiguous' || status === 'missing') && 'text-amber-800',
+                      )}
+                    >
+                      {status === 'matched'
+                        ? 'Confirmed'
+                        : status === 'manual'
+                          ? 'Set manually'
+                          : status === 'cleared'
+                            ? 'Cleared'
+                            : status === 'ambiguous'
+                              ? 'Needs review'
+                              : 'Missing'}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(student.studentId)}
+                      className="ml-3 text-xs text-brand-600 hover:underline"
+                    >
+                      Inspect
+                    </button>
+                  </td>
+                  <td className="py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        className="input !w-auto max-w-[190px] !py-1 text-xs"
+                        aria-label={`Photo for ${student.name}`}
+                        value={pickerValue(student.studentId)}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === '__auto') {
+                            resetPhotoOverride(student.studentId);
+                            return;
+                          }
+                          if (value === '__clear') {
+                            setPhotoOverride(student.studentId, null);
+                            return;
+                          }
+                          if (value === '__manual') return;
+                          const index = Number(value.slice(4));
+                          const entry = photoLibrary[index];
+                          if (entry) setPhotoOverride(student.studentId, entry.url);
+                        }}
+                      >
+                        {pickerValue(student.studentId) === '__manual' && (
+                          <option value="__manual">Attached photo</option>
+                        )}
+                        <option value="__auto">Auto (match by identity)</option>
+                        {photoLibrary.map((entry, index) => (
+                          <option key={entry.url.slice(-24) + index} value={`lib:${index}`}>
+                            {entry.label}
+                          </option>
+                        ))}
+                        <option value="__clear">Clear — print no photo</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        className="text-xs text-brand-600 hover:underline"
+                        onClick={() => {
+                          setAttachError(null);
+                          setAttachingFor(student.studentId);
+                          attachRef.current?.click();
+                        }}
+                      >
+                        Attach…
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <p className="text-[11px] text-ink-500 mt-3">
+            Manual choices are used by the real PDF generator and the preview —
+            they are not applied to the on-screen preview only.
+          </p>
         </div>
       </div>
 

@@ -13,6 +13,7 @@
     "test:pipeline": "npx --no-install jiti scripts/pipeline-test.ts",
     "test:preview": "esbuild scripts/render-preview.tsx --bundle --platform=node --format=cjs --outfile=.tmpbuild/render-preview.cjs --jsx=automatic && node .tmpbuild/render-preview.cjs",
     "test:browser": "node scripts/browser-test.cjs",
+    "test:browser-photos": "node scripts/browser-test-photos.cjs",
     "icons": "node scripts/generate-icons.mjs",
     "test:data": "node scripts/generate-layout-stress.mjs"
   },

@@ -17,8 +17,6 @@ import { checkAndConsumeTrial, clientIp } from "../_shared/entitlement.ts";
 const FREE_THEME_ID = "free-basic-wish";
 const GREETING_LIFESPAN_MS = 48 * 60 * 60 * 1000;
 
-const ADMIN_EMAIL = "deym85810@gmail.com";
-
 const ALLOWED_FONTS = new Set([
   "classic-serif", "elegant-display", "luxe-display", "editorial",
   "festive-decorative", "modern-sans", "clean-geometric", "bold-display",
@@ -168,7 +166,3 @@ serve(async (req: Request) => {
     return errorResponse(message, 500);
   }
 });
-
-// Keep the admin email referenced so the constant is not tree-shaken away in
-// future edits that add an admin bypass.
-void ADMIN_EMAIL;

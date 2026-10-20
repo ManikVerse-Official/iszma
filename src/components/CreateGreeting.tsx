@@ -5,6 +5,7 @@ import { ArrowRight, Check, ArrowLeft, Upload, Loader2, Copy } from 'lucide-reac
 import { useGreeting } from '../context/GreetingContext';
 import { SmartImage } from './SmartImage';
 import { buildGreetingUrl, createGreetingCard } from '../services/greetingService';
+import { uploadCardImageUrl } from '../services/imageUpload';
 
 type Step = 1 | 2 | 3 | 4 | 5;
 
@@ -31,29 +32,11 @@ export const CreateGreeting = () => {
     }
   };
 
-  const uploadImageToImgBB = async (file: File): Promise<string> => {
-  const formData = new FormData();
-  formData.append('image', file);
-  // Auto-expire the hosted image after 48h so it matches the card's life.
-  formData.append('expiration', '172800');
-
-  const apiKey = import.meta.env.VITE_IMGBB_API_KEY;
-    if (!apiKey) {
-      throw new Error('ImgBB API key not found');
-    }
-
-    const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    const data = await response.json();
-    if (!data.success) {
-      throw new Error('Failed to upload image');
-    }
-
-    return data.data.url;
-  };
+  /**
+   * The photo is uploaded by the `upload-image` Edge Function, so the image-host
+   * API key is never shipped to the browser.
+   */
+  const uploadImage = (file: File): Promise<string> => uploadCardImageUrl(file);
 
   const handleGenerateCard = async () => {
     if (!imageFile) return;
@@ -61,7 +44,7 @@ export const CreateGreeting = () => {
     setIsGenerating(true);
     try {
       // Upload image to ImgBB
-      const imageUrl = await uploadImageToImgBB(imageFile);
+      const imageUrl = await uploadImage(imageFile);
 
       // Creation goes through the secure create-greeting function. This legacy
       // wizard is admin-only, so the server confirms the session and writes the

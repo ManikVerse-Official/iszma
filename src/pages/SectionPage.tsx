@@ -19,6 +19,7 @@ import { getThemePriceRanges, themePriceForRegion } from '../services/catalog';
 import { useCurrency } from '../context/CurrencyContext';
 import { TiltCard } from '../components/TiltCard';
 import { ReportCardStudio } from '../components/ReportCardStudio';
+import { GameZone } from './GameZone';
 import { GreetingTheme } from '../types';
 import { useGreeting } from '../context/GreetingContext';
 import { useCatalog } from '../context/CatalogContext';
@@ -37,13 +38,15 @@ export const SectionPage: React.FC = () => {
   const section = getSectionById(sectionId);
   const isGreetings = sectionId === 'greetings';
   const isReportCard = sectionId === 'reportcard-studio';
+  const isGameZone = sectionId === 'game-zone';
 
-  // ReportCard Studio is its own SPA; render the dedicated embed view instead
-  // of trying to mount it inside this router (which caused a route clash).
-  if (isReportCard) {
-    return <ReportCardStudio />;
-  }
-
+  /*
+   * Every hook above MUST run on every render, in the same order. The early
+   * returns below therefore stay AFTER this block — an early return placed
+   * before a hook (as the ReportCard Studio branch once was) makes React throw
+   * "Rendered fewer hooks than expected" the moment Joy navigates here from a
+   * normal section page.
+   */
   const themes = useMemo(() => {
     const bySearch = searchThemeList(allThemes, searchTerm);
     return activeCategory === 'all'
@@ -54,6 +57,18 @@ export const SectionPage: React.FC = () => {
   const priceRanges = useMemo(() => getThemePriceRanges(allThemes), [allThemes]);
   const rangeMin = isIndiaRegion ? priceRanges.inrMin : priceRanges.usdMin;
   const rangeMax = isIndiaRegion ? priceRanges.inrMax : priceRanges.usdMax;
+
+  // ReportCard Studio is its own SPA; render the dedicated embed view instead
+  // of trying to mount it inside this router (which caused a route clash).
+  if (isReportCard) {
+    return <ReportCardStudio />;
+  }
+
+  // Game Zone is its own screen with its own Navbar/Footer, so it renders in
+  // place of the greeting catalogue. Still after every hook, same as above.
+  if (isGameZone) {
+    return <GameZone />;
+  }
 
   if (!section) {
     return (

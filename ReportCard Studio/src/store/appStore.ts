@@ -10,6 +10,7 @@ import type {
   DetectedStructure,
   StructureMapping,
 } from '../types';
+import type { PhotoOverrides } from '../services/photoOverrides';
 
 const DEFAULT_SCHOOL: SchoolProfile = {
   schoolName: '',
@@ -42,6 +43,8 @@ export interface AppState {
   students: Student[];
   validation: ValidationResult | null;
   photoMap: PhotoMap;
+  /** Manual per-student photo corrections (see services/photoOverrides.ts). */
+  photoOverrides: PhotoOverrides;
   generation: GenerationProgress;
   detectedStructure: DetectedStructure | null;
   structureMapping: StructureMapping | null;
@@ -59,6 +62,11 @@ export interface AppState {
   updateStudent: (id: string, patch: Partial<Student>) => void;
 
   setPhotoMap: (m: PhotoMap) => void;
+  /** dataUrl = null clears the photo for that student. */
+  setPhotoOverride: (studentId: string, dataUrl: string | null) => void;
+  /** Drops the manual choice so the automatic matcher decides again. */
+  resetPhotoOverride: (studentId: string) => void;
+  clearPhotoOverrides: () => void;
 
   resetGeneration: () => void;
   setGenerationProgress: (p: Partial<GenerationProgress>) => void;
@@ -86,6 +94,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   students: [],
   validation: null,
   photoMap: {},
+  photoOverrides: {},
   generation: initialGen,
   detectedStructure: null,
   structureMapping: null,
@@ -121,6 +130,21 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setPhotoMap: (m) => set({ photoMap: m }),
 
+  setPhotoOverride: (studentId, dataUrl) =>
+    set((s) => ({
+      photoOverrides: { ...s.photoOverrides, [studentId]: dataUrl },
+    })),
+
+  resetPhotoOverride: (studentId) =>
+    set((s) => {
+      if (!Object.prototype.hasOwnProperty.call(s.photoOverrides, studentId)) return s;
+      const next = { ...s.photoOverrides };
+      delete next[studentId];
+      return { photoOverrides: next };
+    }),
+
+  clearPhotoOverrides: () => set({ photoOverrides: {} }),
+
   resetGeneration: () => set({ generation: initialGen }),
   setGenerationProgress: (p) =>
     set((s) => ({
@@ -139,6 +163,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       students: [],
       validation: null,
       photoMap: {},
+      photoOverrides: {},
       generation: initialGen,
       detectedStructure: null,
       structureMapping: null,

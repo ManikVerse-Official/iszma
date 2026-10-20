@@ -42,6 +42,16 @@ export interface CatalogState {
   customThemes: GreetingTheme[];
   deletedThemeIds: string[];
   products: Product[];
+  /**
+   * Epoch ms of the last local admin price edit per theme id.
+   *
+   * Used to order the local edit against the server row: an edit made after the
+   * `theme_prices` row was written must never be reverted by a later sync (for
+   * example when the server write is rejected or has not landed yet).
+   */
+  priceEditedAt: Record<string, number>;
+  /** Epoch ms of the last local admin edit per product id (same purpose). */
+  productEditedAt: Record<string, number>;
 }
 
 const STORAGE_KEY = 'ishmaverse_catalog_v1';
@@ -52,15 +62,23 @@ export const createInitialCatalogState = (): CatalogState => ({
   customThemes: [],
   deletedThemeIds: [],
   products: defaultProducts,
+  priceEditedAt: {},
+  productEditedAt: {},
 });
 
 /**
  * Fallback USD price when one has not been set explicitly: a rough conversion
- * rounded to 2 decimals (never below $1). Admins can override it per item.
+ * rounded to 2 decimals. Admins can override it per item.
+ *
+ * A genuinely FREE item (INR 0 with no positive USD override) stays free — it
+ * must never be floored up to $1, otherwise the free Welcome Card would show a
+ * $1 price to international visitors.
  */
 export const deriveUsdPrice = (inr: number, usd?: number): number => {
   if (typeof usd === 'number' && Number.isFinite(usd) && usd > 0) return usd;
-  return Math.max(1, Math.round(((Number(inr) || 0) / 85) * 100) / 100);
+  const base = Number(inr) || 0;
+  if (base <= 0) return 0;
+  return Math.max(1, Math.round((base / 85) * 100) / 100);
 };
 
 /** Cleans a product row from Supabase/localStorage into the app shape. */
@@ -95,6 +113,8 @@ export const loadCatalogState = (): CatalogState => {
       customThemes: parsed.customThemes ?? [],
       deletedThemeIds: parsed.deletedThemeIds ?? [],
       products: (parsed.products ?? defaultProducts).map((p) => normalizeProduct(p)),
+      priceEditedAt: parsed.priceEditedAt ?? {},
+      productEditedAt: parsed.productEditedAt ?? {},
     };
   } catch {
     return createInitialCatalogState();
@@ -133,6 +153,137 @@ export const applyThemePatches = (state: CatalogState): GreetingTheme[] => {
   // The free welcome card always leads the storefront — even after custom themes
   // are added or a remote catalog sync reorders the list.
   return sortFreeThemeFirst(normalized);
+};
+
+/* ------------------------------------------------------------------ */
+/* Remote → local merge                                                */
+/* ------------------------------------------------------------------ */
+
+/** A price row as returned by the remote `theme_prices` table. */
+export interface RemoteThemePrice {
+  price: number;
+  price_usd: number;
+  /** Epoch ms of the server row's `updated_at`, when known. */
+  updatedAt?: number;
+}
+
+/** Everything the remote catalog can hand back in one sync pass. */
+export interface RemoteCatalogSnapshot {
+  products: Product[] | null;
+  themePrices: Record<string, RemoteThemePrice> | null;
+  themeCatalog: {
+    overrides: Record<string, RemoteThemeOverride>;
+    customThemes: GreetingTheme[];
+  } | null;
+}
+
+/**
+ * True when a local admin edit is newer than the server row it would replace.
+ *
+ * A missing local timestamp means "never edited here", so the server wins. A
+ * missing remote timestamp is treated as older than any local edit: the server
+ * cannot prove it is newer, and losing an admin's change is worse than showing
+ * a value the server has not caught up with yet.
+ */
+export const localEditWins = (
+  localEditedAt: number | undefined,
+  remoteUpdatedAt: number | undefined,
+): boolean => {
+  if (!localEditedAt) return false;
+  if (!remoteUpdatedAt) return true;
+  return localEditedAt > remoteUpdatedAt;
+};
+
+/**
+ * Merges a remote snapshot into the local catalog.
+ *
+ * This is the fix for "the price reverts when I reload": remote theme prices and
+ * products no longer blindly overwrite the admin's own edits. A local edit made
+ * *after* the server row survives, while anything edited elsewhere (or never
+ * touched locally) still comes from the server — so the storefront and the
+ * payment functions keep agreeing on the price.
+ */
+export const mergeRemoteCatalog = (
+  prev: CatalogState,
+  remote: RemoteCatalogSnapshot,
+): CatalogState => {
+  const next: CatalogState = { ...prev };
+  const themePatches = { ...prev.themePatches };
+
+  if (remote.themeCatalog) {
+    // Server edits first, so any edit made in this browser still wins.
+    for (const [id, override] of Object.entries(remote.themeCatalog.overrides)) {
+      themePatches[id] = { ...override.patch, ...themePatches[id] };
+    }
+
+    const byId = new Map<string, GreetingTheme>();
+    for (const theme of remote.themeCatalog.customThemes) byId.set(theme.id, theme);
+    for (const theme of prev.customThemes) byId.set(theme.id, theme);
+    next.customThemes = [...byId.values()];
+
+    const deleted = new Set([
+      ...prev.deletedThemeIds,
+      ...Object.entries(remote.themeCatalog.overrides)
+        .filter(([, override]) => override.deleted)
+        .map(([id]) => id),
+    ]);
+    next.deletedThemeIds = [...deleted];
+  }
+
+  if (remote.themePrices) {
+    for (const [id, price] of Object.entries(remote.themePrices)) {
+      if (localEditWins(prev.priceEditedAt[id], price.updatedAt)) continue;
+      themePatches[id] = {
+        ...themePatches[id],
+        price: price.price,
+        price_usd: price.price_usd,
+      };
+    }
+  }
+  next.themePatches = themePatches;
+
+  if (remote.products && remote.products.length > 0) {
+    const remoteById = new Map(remote.products.map((product) => [product.id, product]));
+    const merged = remote.products.map((remoteProduct) => {
+      const local = prev.products.find((product) => product.id === remoteProduct.id);
+      const remoteAt = Date.parse(remoteProduct.created_at) || 0;
+      if (local && localEditWins(prev.productEditedAt[remoteProduct.id], remoteAt)) {
+        return local;
+      }
+      return remoteProduct;
+    });
+    // Products the admin created here but the server has not stored yet are kept,
+    // while untouched built-in defaults are never resurrected over a live list.
+    for (const product of prev.products) {
+      if (!remoteById.has(product.id) && prev.productEditedAt[product.id]) merged.push(product);
+    }
+    next.products = merged;
+  }
+
+  return next;
+};
+
+/** Result of a best-effort server write, so callers can warn the admin. */
+export interface RemoteWriteResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Turns a Supabase/network failure into a short, human message. */
+export const describeRemoteError = (error: unknown): string => {
+  const raw =
+    typeof error === 'string'
+      ? error
+      : error && typeof error === 'object' && 'message' in error
+        ? String((error as { message?: unknown }).message ?? '')
+        : '';
+  if (/row-level security|permission denied|violates row-level/i.test(raw)) {
+    return 'The server rejected the change: this account is not an admin in Supabase (row-level security). Sign in with the admin account, or add your user to the admin_users table.';
+  }
+  if (/does not exist|Could not find the table|column/i.test(raw)) {
+    return `The server rejected the change: ${raw}`;
+  }
+  return raw ? `The change could not be saved to the server: ${raw}` : 'The change could not be saved to the server.';
 };
 
 const newId = (prefix: string): string => {
@@ -207,25 +358,39 @@ export const fetchRemoteProducts = async (): Promise<Product[] | null> => {
   }
 };
 
-export const pushRemoteProduct = async (product: Product): Promise<void> => {
-  if (!isSupabaseConfigured()) return;
-  const base = {
+export const pushRemoteProduct = async (product: Product): Promise<RemoteWriteResult> => {
+  if (!isSupabaseConfigured()) return { ok: true };
+  const price = Number(product.price_inr ?? product.price) || 0;
+  const richPayload = {
     id: product.id,
     category_id: product.category_id,
     name: product.name,
     description: product.description,
-    price_inr: product.price_inr ?? product.price,
+    price_inr: price,
     image_url: product.image_url,
     product_file_url: product.product_file_url,
     updated_at: new Date().toISOString(),
+    price_usd: product.price_usd,
+  };
+  // Minimal payload for the shipped `products` schema, which stores just the
+  // name + prices. Without this fallback *every* product write failed with a
+  // "column does not exist" error, so an edited price never reached the server
+  // and the stale row reverted it on the next reload.
+  const minimalPayload = {
+    id: product.id,
+    name: product.name,
+    price,
+    price_usd: product.price_usd,
   };
   try {
-    // Try the dual-currency payload first; fall back to the legacy shape if the
-    // `price_usd` column has not been added to the Supabase table yet.
-    const { error } = await supabase.from('products').upsert({ ...base, price_usd: product.price_usd });
-    if (error) await supabase.from('products').upsert(base);
-  } catch {
-    /* offline / RLS — local state remains the source of truth */
+    const first = await supabase.from('products').upsert(richPayload);
+    if (!first.error) return { ok: true };
+    const second = await supabase.from('products').upsert(minimalPayload);
+    if (second.error) return { ok: false, error: describeRemoteError(second.error) };
+    return { ok: true };
+  } catch (error) {
+    /* offline — local state remains the source of truth */
+    return { ok: false, error: describeRemoteError(error) };
   }
 };
 
@@ -247,21 +412,31 @@ export const removeRemoteProduct = async (id: string): Promise<void> => {
  * every visitor see the same INR/USD amounts, not just the admin's browser.
  */
 export const fetchRemoteThemePrices = async (): Promise<
-  Record<string, { price: number; price_usd: number }> | null
+  Record<string, RemoteThemePrice> | null
 > => {
   if (!isSupabaseConfigured()) return null;
   try {
     const { data, error } = await supabase
       .from('theme_prices')
-      .select('theme_id, price_inr, price_usd');
+      .select('theme_id, price_inr, price_usd, updated_at');
     if (error || !data) return null;
 
-    const prices: Record<string, { price: number; price_usd: number }> = {};
-    for (const row of data as { theme_id?: string; price_inr?: number; price_usd?: number }[]) {
+    const prices: Record<string, RemoteThemePrice> = {};
+    for (const row of data as {
+      theme_id?: string;
+      price_inr?: number;
+      price_usd?: number;
+      updated_at?: string;
+    }[]) {
       const id = row.theme_id ? String(row.theme_id) : '';
       if (!id) continue;
       const inr = Number(row.price_inr) || 0;
-      prices[id] = { price: inr, price_usd: deriveUsdPrice(inr, Number(row.price_usd)) };
+      const updatedAt = row.updated_at ? Date.parse(row.updated_at) : NaN;
+      prices[id] = {
+        price: inr,
+        price_usd: deriveUsdPrice(inr, Number(row.price_usd)),
+        updatedAt: Number.isFinite(updatedAt) ? updatedAt : undefined,
+      };
     }
     return prices;
   } catch {
@@ -274,17 +449,20 @@ export const pushRemoteThemePrice = async (
   themeId: string,
   price: number,
   priceUsd: number,
-): Promise<void> => {
-  if (!isSupabaseConfigured()) return;
+): Promise<RemoteWriteResult> => {
+  if (!isSupabaseConfigured()) return { ok: true };
   try {
-    await supabase.from('theme_prices').upsert({
+    const { error } = await supabase.from('theme_prices').upsert({
       theme_id: themeId,
       price_inr: Number(price) || 0,
       price_usd: Number(priceUsd) || 0,
       updated_at: new Date().toISOString(),
     });
-  } catch {
-    /* offline / RLS — local state remains the source of truth */
+    if (error) return { ok: false, error: describeRemoteError(error) };
+    return { ok: true };
+  } catch (error) {
+    /* offline — local state remains the source of truth */
+    return { ok: false, error: describeRemoteError(error) };
   }
 };
 

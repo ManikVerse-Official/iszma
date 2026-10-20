@@ -13,16 +13,18 @@ export type { GradingBand };
 
 
 /**
- * Default scale: A1 (91-100) A2 (81-90) B1 (71-80) B2 (61-70) C (51-60) D (below 50).
- * Order matters: the first band whose range contains the value wins.
+ * Default scale: A1 (91-100) A2 (81-90) B1 (71-80) B2 (61-70) C1 (below 61).
+ *
+ * The scale is deliberately capped at C1 — the lowest grade printed anywhere on
+ * the card is C1, never D/E/F. Order matters: the first band whose range
+ * contains the value wins.
  */
 export const DEFAULT_GRADING_BANDS: GradingBand[] = [
   { grade: 'A1', min: 91, max: 100, remark: 'Excellent' },
   { grade: 'A2', min: 81, max: 90, remark: 'Very Good' },
   { grade: 'B1', min: 71, max: 80, remark: 'Good' },
   { grade: 'B2', min: 61, max: 70, remark: 'Satisfactory' },
-  { grade: 'C', min: 51, max: 60, remark: 'Average' },
-  { grade: 'D', min: 0, max: 50, remark: 'Needs Improvement' },
+  { grade: 'C1', min: 0, max: 60, remark: 'Average' },
 ];
 
 /** Awarded for a value that cannot be graded (missing / absent / exempt). */
@@ -109,6 +111,40 @@ export function bandsLegend(bands?: GradingBand[] | null): string {
       return `${b.grade} (${b.min}-${rounded})`;
     })
     .join('    ');
+}
+
+/**
+ * Clamp an externally supplied grade label (from the workbook) to the scale's
+ * floor.
+ *
+ * The product rule is simple: grades run A1 … C1 and never go below C1. A
+ * workbook may still carry an older label (C2, D, E, "Needs Improvement", …);
+ * those are pulled up to the floor grade so nothing worse than C1 is ever
+ * printed. Labels that are already at or above the floor (A1/A2/B1/B2, or a
+ * school's own A/B/C) are preserved untouched, as are plain numeric values.
+ */
+export function capGradeLabel(
+  value: string | null | undefined,
+  bands?: GradingBand[] | null,
+): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  /* Numbers (marks, star counts, 4/5) are never grades. */
+  if (/^\d/.test(raw)) return raw;
+
+  const scale = normalizeGradingBands(bands);
+  const floor = scale[scale.length - 1]?.grade;
+  if (!floor) return raw;
+
+  const upper = raw.toUpperCase();
+  if (upper === floor.toUpperCase()) return raw;
+  if (scale.some((band) => band.grade.toUpperCase() === upper)) return raw;
+
+  const pct = percentFromGradeLabel(raw);
+  if (pct === null) return raw;
+
+  const mapped = gradeFromPercent(pct, scale);
+  return mapped === floor ? floor : raw;
 }
 
 /**

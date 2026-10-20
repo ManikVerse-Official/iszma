@@ -1,5 +1,6 @@
 import type jsPDF from 'jspdf';
 import { hexToRgb, type ThemePalette } from '../../themes';
+import { mmToPt, TYPE_MM } from '../../themes/typography';
 
 /** A4 geometry (mm). Every layout works inside these bounds. */
 export const A4_W_MM = 210;
@@ -376,13 +377,13 @@ export function drawSignatureBlock(
   }
 
   drawWrapped(doc, name || '', x + width / 2, lineY + 3.6, width - 1, {
-    size: 8.5,
+    size: mmToPt(TYPE_MM.signatureName),
     color: colors.text,
     align: 'center',
     maxLines: 2,
   });
   drawWrapped(doc, role, x + width / 2, lineY + 9.4, width - 1, {
-    size: 6.5,
+    size: mmToPt(TYPE_MM.footer),
     style: 'bold',
     color: colors.muted,
     align: 'center',
@@ -411,7 +412,7 @@ export function drawFooterAndFrame(
   if (style === 'solid') {
     fillRect(doc, MARGIN_MM, footerY, CONTENT_W, 6, colors.primary);
     drawWrapped(doc, text, A4_W_MM / 2, footerY + 1.2, CONTENT_W - 4, {
-      size: 6.5,
+      size: mmToPt(TYPE_MM.footer),
       color: [255, 255, 255],
       align: 'center',
       maxLines: 2,
@@ -419,7 +420,7 @@ export function drawFooterAndFrame(
   } else {
     strokeRect(doc, MARGIN_MM, footerY, CONTENT_W, 6, colors.line, 0.2);
     drawWrapped(doc, text, A4_W_MM / 2, footerY + 1.2, CONTENT_W - 4, {
-      size: 6.5,
+      size: mmToPt(TYPE_MM.footer),
       color: colors.muted,
       align: 'center',
       maxLines: 2,

@@ -97,13 +97,21 @@ serve(async (req: Request) => {
 
   try {
     const body = (await req.json()) as Record<string, unknown>;
-    const to = clean(body.to, 150).toLowerCase();
+    const requestedTo = clean(body.to, 150).toLowerCase();
     const template = clean(body.template, 40);
-
-    if (!isEmail(to)) return errorResponse("A valid recipient email is required", 400);
 
     const rendered = render(body);
     if (!rendered) return errorResponse("Unknown email template", 400);
+
+    /*
+     * A bill with no buyer address is addressed to the owner so the record of
+     * the sale is never lost. The owner address is a server secret
+     * (ADMIN_NOTIFY_EMAIL), never anything the browser sent. Every other
+     * template still requires a real recipient.
+     */
+    const ownerFallback = template === "purchase" ? (adminNotifyEmails()[0] ?? "") : "";
+    const to = isEmail(requestedTo) ? requestedTo : ownerFallback;
+    if (!isEmail(to)) return errorResponse("A valid recipient email is required", 400);
 
     // Resend not configured yet? Log and no-op so callers never break.
     if (!isEmailConfigured()) {

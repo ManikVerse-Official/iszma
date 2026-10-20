@@ -29,7 +29,7 @@ import {
   type TextBlock,
 } from './pdfKit';
 import {
-  ACADEMIC_COL_RATIOS,
+  academicColumnRatios,
   BODY_GAP_MM,
   CO_VALUE_W_MM,
   LEFT_W_MM,
@@ -42,6 +42,7 @@ import {
   SESSION_W_MM,
   SKILLS_GAP_MM,
 } from '../../themes/geometry';
+import { mmToPt, TYPE_MM } from '../../themes/typography';
 
 /**
  * Holistic theme — PDF layout.
@@ -71,7 +72,6 @@ const RIGHT_W = RIGHT_W_MM; // 68
 
 const INFO_PADDING = 2;
 const INFO_LABEL_W = 30;
-const ACAD_COLS = ACADEMIC_COL_RATIOS;
 const MAX_CELL_LINES = 4;
 
 const SCALES = [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55];
@@ -139,26 +139,21 @@ function computeBody(
   scale: number,
   fill = 1,
 ): BodyLayout {
-  const acadFontSize = fontScale(scale, 7.6);
+  const acadFontSize = fontScale(scale, mmToPt(TYPE_MM.academic));
   const acadBaseRow = Math.max(3.6, 5.2 * scale);
-  const acadRemarks = model.academic.map((row) => row.remark);
   const acadNames = model.academic.map((row) => row.name);
 
-  const subjectWidth = LEFT_W * ACAD_COLS[0] - 3;
-  const remarkWidth = LEFT_W * ACAD_COLS[4] - 3;
+  const acadRatios = academicColumnRatios(model.academicColumns.length);
+  const subjectWidth = LEFT_W * acadRatios[0] - 3;
 
   let ok = true;
-  const acadRowHeights = acadNames.map((name, index) => {
+  const acadRowHeights = acadNames.map((name) => {
     const nameLines = measureText(doc, name, subjectWidth, {
       size: acadFontSize,
       lineHeight: acadFontSize * 0.45,
     }).lines.length;
-    const remarkLines = measureText(doc, acadRemarks[index], remarkWidth, {
-      size: acadFontSize,
-      lineHeight: acadFontSize * 0.45,
-    }).lines.length;
-    if (nameLines > MAX_CELL_LINES || remarkLines > MAX_CELL_LINES) ok = false;
-    const lines = Math.max(nameLines, remarkLines, 1);
+    if (nameLines > MAX_CELL_LINES) ok = false;
+    const lines = Math.max(nameLines, 1);
     const textFloor = lines * acadFontSize * 0.45 + 1.4;
     return growRow(Math.max(acadBaseRow, textFloor), textFloor, fill, MAX_ROW_MM.academic);
   });
@@ -167,7 +162,7 @@ function computeBody(
 
   /* Grading scale legend wraps onto as many lines as needed. */
   const scaleBlock = measureText(doc, `GRADING SCALE: ${model.gradeScale}`, LEFT_W, {
-    size: fontScale(scale, 6.5),
+    size: fontScale(scale, mmToPt(TYPE_MM.gradingScale)),
   });
   const scaleHeight = scaleBlock.height + 2.5;
 
@@ -183,7 +178,7 @@ function computeBody(
   const leftHeight = acadHeight + scaleHeight + skillsHeight + 4;
 
   /* Right column: co-scholastic + attendance + overall. */
-  const coFontSize = fontScale(scale, 7.4);
+  const coFontSize = fontScale(scale, mmToPt(TYPE_MM.coScholastic));
   const coNameWidth = RIGHT_W - 15;
   const coRowHeights = model.coScholastic.map((row: ReportCardRow) => {
     const lines = Math.max(
@@ -205,7 +200,7 @@ function computeBody(
     fill,
     MAX_ROW_MM.attendance,
   );
-  const attendanceHeight = 6.5 + 3 * attendanceRowHeight + 1;
+  const attendanceHeight = 6.5 + Math.max(1, model.holisticDevelopment.length) * attendanceRowHeight + 1;
   const overallHeight = 6.5 + 13 + 3;
 
   const rightHeight = coHeight + attendanceHeight + overallHeight + 4;
@@ -361,14 +356,16 @@ function drawAcademicTable(
 ): number {
   const x = LEFT_X;
   const w = LEFT_W;
-  const acadFontSize = fontScale(layout.scale, 7.6);
-  const columns = ACAD_COLS.map((ratio) => ratio * w);
+  const acadFontSize = fontScale(layout.scale, mmToPt(TYPE_MM.academic));
+  const columns = academicColumnRatios(model.academicColumns.length).map(
+    (ratio) => ratio * w,
+  );
   let y = top;
 
   fillRect(doc, x, y, w, 7, colors.headerFill);
   strokeRect(doc, x, y, w, 7, colors.line, 0.2);
   drawWrapped(doc, 'ACADEMIC PERFORMANCE', x + w / 2, y + 1.6, w - 2, {
-    size: 8,
+    size: mmToPt(TYPE_MM.sectionBar),
     style: 'bold',
     color: colors.text,
     align: 'center',
@@ -376,46 +373,50 @@ function drawAcademicTable(
   });
   y += 7;
 
-  const headers = ['Subject', 'Max. Marks', 'Marks Obt.', 'Grade', 'Remarks'];
+  /* Headers mirror the workbook: Subject + its own component columns + Total. */
+  const headers = ['Subject', ...model.academicColumns.map((column) => column.label)];
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(acadFontSize);
   doc.setTextColor(...colors.text);
   doc.setFillColor(248, 250, 252);
-  doc.rect(x, y, w, 7, 'F');
-  let cx = x;
-  headers.forEach((header, index) => {
-    strokeRect(doc, cx, y, columns[index], 7, colors.line, 0.2);
-    const block = measureText(doc, header, columns[index] - 2, {
+  /*
+   * The header row is as tall as its tallest wrapped title: a column now names
+   * what it is out of ("SA1 (80)"), which wraps in a narrow column and would
+   * otherwise spill onto the first subject row.
+   */
+  const headerBlocks = headers.map((header, index) =>
+    measureText(doc, header, columns[index] - 2, {
       size: acadFontSize,
       style: 'bold',
       lineHeight: acadFontSize * 0.45,
-    });
-    drawTextBlock(doc, block, index === 0 || index === 4 ? cx + 1.5 : cx + columns[index] / 2, y + 1.4, {
+      maxLines: 2,
+    }),
+  );
+  const headerHeight = Math.max(7, ...headerBlocks.map((block) => block.height + 2.6));
+  doc.rect(x, y, w, headerHeight, 'F');
+  let cx = x;
+  headers.forEach((header, index) => {
+    strokeRect(doc, cx, y, columns[index], headerHeight, colors.line, 0.2);
+    drawTextBlock(doc, headerBlocks[index], index === 0 ? cx + 1.5 : cx + columns[index] / 2, y + 1.4, {
       size: acadFontSize,
       style: 'bold',
       color: colors.text,
-      align: index === 0 || index === 4 ? 'left' : 'center',
+      align: index === 0 ? 'left' : 'center',
     });
     cx += columns[index];
   });
-  y += 7;
+  y += headerHeight;
 
   model.academic.forEach((row, rowIndex) => {
     const height = layout.acadRowHeights[rowIndex] ?? 5;
     if (row.isGrandTotal) {
       fillRect(doc, x, y, w, height, colors.totalFill);
     }
-    const cells = [
-      String(row.name),
-      String(row.maxMarks),
-      String(row.marks),
-      String(row.grade),
-      String(row.remark),
-    ];
+    const cells = [String(row.name), ...row.cells.map((cell) => String(cell))];
     let cellX = x;
     cells.forEach((cell, index) => {
       strokeRect(doc, cellX, y, columns[index], height, colors.line, 0.2);
-      const block = measureText(doc, cell, columns[index] - 3, {
+      const block = measureText(doc, cell, columns[index] - 2, {
         size: acadFontSize,
         style: row.isGrandTotal ? 'bold' : 'normal',
         lineHeight: acadFontSize * 0.45,
@@ -424,13 +425,13 @@ function drawAcademicTable(
       drawTextBlock(
         doc,
         block,
-        index === 0 || index === 4 ? cellX + 1.5 : cellX + columns[index] / 2,
+        index === 0 ? cellX + 1.5 : cellX + columns[index] / 2,
         y + (height - block.height) / 2,
         {
           size: acadFontSize,
           style: row.isGrandTotal ? 'bold' : 'normal',
           color: colors.text,
-          align: index === 0 || index === 4 ? 'left' : 'center',
+          align: index === 0 ? 'left' : 'center',
         },
       );
       cellX += columns[index];
@@ -450,13 +451,13 @@ function drawCoScholastic(
 ): number {
   const x = RIGHT_X;
   const w = RIGHT_W;
-  const fontSize = fontScale(layout.scale, 7.4);
+  const fontSize = fontScale(layout.scale, mmToPt(TYPE_MM.coScholastic));
   let y = top;
 
   fillRect(doc, x, y, w, 7, colors.coFill);
   strokeRect(doc, x, y, w, 7, colors.line, 0.2);
   drawWrapped(doc, 'CO-SCHOLASTIC AREAS (GRADES)', x + w / 2, y + 1.8, w - 2, {
-    size: 7.5,
+    size: mmToPt(TYPE_MM.sectionBar),
     style: 'bold',
     color: colors.text,
     align: 'center',
@@ -507,13 +508,13 @@ function drawSkillsBox(
   colors: PdfColors,
   maxStars: number,
 ): number {
-  const fontSize = 7.2;
+  const fontSize = mmToPt(TYPE_MM.skills);
   let y = top;
 
   fillRect(doc, x, y, w, 6.5, headerFill);
   strokeRect(doc, x, y, w, 6.5, colors.line, 0.2);
   drawWrapped(doc, title, x + w / 2, y + 1.7, w - 2, {
-    size: 7.2,
+    size: mmToPt(TYPE_MM.sectionBar),
     style: 'bold',
     color: colors.text,
     align: 'center',
@@ -546,7 +547,11 @@ function drawSkillsBox(
   return y;
 }
 
-function drawAttendance(
+/**
+ * Holistic Development Profile — the four graded development areas that
+ * replaced the old (duplicated) attendance block on the holistic card.
+ */
+function drawHolisticProfile(
   doc: jsPDF,
   model: ReportCardModel,
   x: number,
@@ -556,10 +561,10 @@ function drawAttendance(
   rowHeight: number,
 ): number {
   let y = top;
-  fillRect(doc, x, y, w, 6.5, colors.headerFill);
+  fillRect(doc, x, y, w, 6.5, colors.coFill);
   strokeRect(doc, x, y, w, 6.5, colors.line, 0.2);
-  drawWrapped(doc, 'ATTENDANCE', x + w / 2, y + 1.8, w - 2, {
-    size: 8,
+  drawWrapped(doc, 'HOLISTIC DEVELOPMENT PROFILE', x + w / 2, y + 1.8, w - 2, {
+    size: mmToPt(TYPE_MM.sectionBar),
     style: 'bold',
     color: colors.text,
     align: 'center',
@@ -567,24 +572,26 @@ function drawAttendance(
   });
   y += 6.5;
 
-  const rows: [string, string][] = [
-    ['Total Working Days', model.attendance.workingDays],
-    ['Days Present', model.attendance.present],
-    ['Attendance %', model.attendance.percentage],
-  ];
-
-  rows.forEach(([label, value]) => {
+  model.holisticDevelopment.forEach((row) => {
     strokeRect(doc, x, y, w, rowHeight, colors.line, 0.2);
-    const labelBlock = measureText(doc, label, w - 20, { size: 7.2, lineHeight: 3.2, maxLines: 2 });
-    drawTextBlock(doc, labelBlock, x + 1.5, y + (rowHeight - labelBlock.height) / 2, {
-      size: 7.2,
-      color: colors.muted,
+    doc.setDrawColor(...colors.line);
+    doc.setLineWidth(0.2);
+    doc.line(x + w - CO_VALUE_W_MM, y, x + w - CO_VALUE_W_MM, y + rowHeight);
+
+    const nameBlock = measureText(doc, String(row.name).toUpperCase(), w - (CO_VALUE_W_MM + 2), {
+      size: mmToPt(TYPE_MM.holisticValue),
+      lineHeight: 3.2,
+      maxLines: 2,
     });
-    drawWrapped(doc, String(value || '—'), x + w - 2, y + rowHeight / 2 - 1.3, 18, {
-      size: 7.4,
+    drawTextBlock(doc, nameBlock, x + 1.5, y + (rowHeight - nameBlock.height) / 2, {
+      size: mmToPt(TYPE_MM.holisticValue),
+      color: colors.text,
+    });
+    drawWrapped(doc, String(row.value || '—'), x + w - 6.5, y + rowHeight / 2 - 1.3, 12, {
+      size: mmToPt(TYPE_MM.holisticValue),
       style: 'bold',
       color: colors.text,
-      align: 'right',
+      align: 'center',
       maxLines: 2,
       lineHeight: 3.2,
     });
@@ -603,11 +610,16 @@ function drawOverall(
   colors: PdfColors,
   /** The panel may grow to absorb the right column's slack (default 19.5mm). */
   height: number = OVERALL_BOX_H,
+  /**
+   * Summary printed under the performance label — the model's `summaryShort`
+   * (percentage · grade · result), or null to hide the line.
+   */
+  summary: string | null = null,
 ): number {
   const labelHeight = 6.5;
   fillRect(doc, x, top, w, labelHeight, colors.overall);
   drawWrapped(doc, 'OVERALL PERFORMANCE', x + w / 2, top + 1.8, w - 2, {
-    size: 7.8,
+    size: mmToPt(TYPE_MM.sectionBar),
     style: 'bold',
     color: [255, 255, 255],
     align: 'center',
@@ -617,13 +629,30 @@ function drawOverall(
   strokeRect(doc, x, top, w, height, colors.overall, 0.3);
   /* Keep the resting offset, sliding down as the panel grows. */
   drawWrapped(doc, label, x + w / 2, top + 8 + (height - OVERALL_BOX_H) / 2, w - 3, {
-    size: 12.5,
+    size: mmToPt(TYPE_MM.overallValue),
     style: 'bold',
     color: colors.overall,
     align: 'center',
     maxLines: 2,
     lineHeight: 4.6,
   });
+  if (summary !== null) {
+    drawWrapped(
+      doc,
+      summary,
+      x + w / 2,
+      top + 14.5 + (height - OVERALL_BOX_H) / 2,
+      w - 3,
+      {
+        size: mmToPt(TYPE_MM.overallLabel),
+        style: 'bold',
+        color: colors.overall,
+        align: 'center',
+        maxLines: 1,
+        lineHeight: 3,
+      },
+    );
+  }
   return top + 19.5;
 }
 
@@ -657,14 +686,16 @@ function renderHolisticFlow(
   };
 
   /* ── Academic table, paginated ─────────────────────────────────────── */
-  const columns = ACAD_COLS.map((ratio) => ratio * CONTENT_W);
-  const acadFontSize = fontScale(layout.scale, 7.6);
+  const columns = academicColumnRatios(model.academicColumns.length).map(
+    (ratio) => ratio * CONTENT_W,
+  );
+  const acadFontSize = fontScale(layout.scale, mmToPt(TYPE_MM.academic));
 
   const drawTableHead = () => {
     fillRect(doc, MARGIN_MM, y, CONTENT_W, 6.5, colors.headerFill);
     strokeRect(doc, MARGIN_MM, y, CONTENT_W, 6.5, colors.line, 0.2);
     drawWrapped(doc, 'ACADEMIC PERFORMANCE', MARGIN_MM + CONTENT_W / 2, y + 1.6, CONTENT_W - 2, {
-      size: 8,
+      size: mmToPt(TYPE_MM.sectionBar),
       style: 'bold',
       color: colors.text,
       align: 'center',
@@ -672,28 +703,34 @@ function renderHolisticFlow(
     });
     y += 6.5;
 
-    const headers = ['Subject', 'Max. Marks', 'Marks Obt.', 'Grade', 'Remarks'];
+    const headers = ['Subject', ...model.academicColumns.map((column) => column.label)];
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(acadFontSize);
     doc.setFillColor(248, 250, 252);
-    doc.rect(MARGIN_MM, y, CONTENT_W, 6, 'F');
+    /* Tall enough for the tallest wrapped column title (see the note above). */
+    const headerBlocks = headers.map((header, index) =>
+      measureText(doc, header, columns[index] - 2, {
+        size: acadFontSize,
+        style: 'bold',
+        lineHeight: acadFontSize * 0.45,
+        maxLines: 2,
+      }),
+    );
+    const headerHeight = Math.max(6, ...headerBlocks.map((block) => block.height + 2.4));
+    doc.rect(MARGIN_MM, y, CONTENT_W, headerHeight, 'F');
     let headerX = MARGIN_MM;
     headers.forEach((header, index) => {
-      strokeRect(doc, headerX, y, columns[index], 6, colors.line, 0.2);
+      strokeRect(doc, headerX, y, columns[index], headerHeight, colors.line, 0.2);
       drawTextBlock(
         doc,
-        measureText(doc, header, columns[index] - 2, {
-          size: acadFontSize,
-          style: 'bold',
-          lineHeight: acadFontSize * 0.45,
-        }),
-        index === 0 || index === 4 ? headerX + 1.5 : headerX + columns[index] / 2,
+        headerBlocks[index],
+        index === 0 ? headerX + 1.5 : headerX + columns[index] / 2,
         y + 1.2,
-        { size: acadFontSize, style: 'bold', color: colors.text, align: index === 0 || index === 4 ? 'left' : 'center' },
+        { size: acadFontSize, style: 'bold', color: colors.text, align: index === 0 ? 'left' : 'center' },
       );
       headerX += columns[index];
     });
-    y += 6;
+    y += headerHeight;
   };
 
   drawTableHead();
@@ -706,17 +743,11 @@ function renderHolisticFlow(
     }
     if (row.isGrandTotal) fillRect(doc, MARGIN_MM, y, CONTENT_W, height, colors.totalFill);
 
-    const cells = [
-      String(row.name),
-      String(row.maxMarks),
-      String(row.marks),
-      String(row.grade),
-      String(row.remark),
-    ];
+    const cells = [String(row.name), ...row.cells.map((cell) => String(cell))];
     let cellX = MARGIN_MM;
     cells.forEach((cell, index) => {
       strokeRect(doc, cellX, y, columns[index], height, colors.line, 0.2);
-      const block = measureText(doc, cell, columns[index] - 3, {
+      const block = measureText(doc, cell, columns[index] - 2, {
         size: acadFontSize,
         style: row.isGrandTotal ? 'bold' : 'normal',
         lineHeight: acadFontSize * 0.45,
@@ -725,13 +756,13 @@ function renderHolisticFlow(
       drawTextBlock(
         doc,
         block,
-        index === 0 || index === 4 ? cellX + 1.5 : cellX + columns[index] / 2,
+        index === 0 ? cellX + 1.5 : cellX + columns[index] / 2,
         y + (height - block.height) / 2,
         {
           size: acadFontSize,
           style: row.isGrandTotal ? 'bold' : 'normal',
           color: colors.text,
-          align: index === 0 || index === 4 ? 'left' : 'center',
+          align: index === 0 ? 'left' : 'center',
         },
       );
       cellX += columns[index];
@@ -741,11 +772,15 @@ function renderHolisticFlow(
 
   /* ── Grading scale ─────────────────────────────────────────────────── */
   const scaleBlock = measureText(doc, `GRADING SCALE: ${model.gradeScale}`, CONTENT_W, {
-    size: 6.8,
+    size: mmToPt(TYPE_MM.gradingScale),
     lineHeight: 3,
   });
   ensure(scaleBlock.height + 3);
-  y = drawTextBlock(doc, scaleBlock, MARGIN_MM, y + 2, { size: 6.8, color: colors.text }) + 1;
+  y =
+    drawTextBlock(doc, scaleBlock, MARGIN_MM, y + 2, {
+      size: mmToPt(TYPE_MM.gradingScale),
+      color: colors.text,
+    }) + 1;
 
   /* ── Co-scholastic (full width) ────────────────────────────────────── */
   if (model.coScholastic.length > 0) {
@@ -754,7 +789,9 @@ function renderHolisticFlow(
     const rowHeight = Math.max(4, 4.8 * layout.scale, ...layout.coRowHeights);
     const boxHeight = 6.5 + model.coScholastic.length * rowHeight;
     ensure(boxHeight + 3);
-    y = drawCoScholasticFull(doc, model.coScholastic, y, rowHeight, colors, 7.4) + 2;
+    y =
+      drawCoScholasticFull(doc, model.coScholastic, y, rowHeight, colors, mmToPt(TYPE_MM.coScholastic)) +
+      2;
   }
 
   /* ── Skills side by side ───────────────────────────────────────────── */
@@ -794,7 +831,7 @@ function renderHolisticFlow(
   /* ── Attendance + overall side by side ─────────────────────────────── */
   const halfW = (CONTENT_W - 3) / 2;
   ensure(26);
-  const attendanceBottom = drawAttendance(
+  const holisticBottom = drawHolisticProfile(
     doc,
     model,
     MARGIN_MM,
@@ -803,13 +840,26 @@ function renderHolisticFlow(
     colors,
     layout.attendanceRowHeight,
   );
-  drawOverall(doc, model.overallPerformance, MARGIN_MM + halfW + 3, y, halfW, colors);
-  y = Math.max(attendanceBottom, y + 19.5) + 4;
+  drawOverall(
+    doc,
+    model.overallPerformance,
+    MARGIN_MM + halfW + 3,
+    y,
+    halfW,
+    colors,
+    OVERALL_BOX_H,
+    model.totals.percentage !== null ? model.totals.summaryShort : null,
+  );
+  y = Math.max(holisticBottom, y + 19.5) + 4;
 
   /* ── Remarks + signatures ──────────────────────────────────────────── */
   const halfText = CONTENT_W / 2 - 6;
-  const teacherBlock = measureText(doc, model.teacherRemarks || '—', halfText, { size: 7.4 });
-  const principalBlock = measureText(doc, model.principalRemarks || '—', halfText, { size: 7.4 });
+  const teacherBlock = measureText(doc, model.teacherRemarks || '—', halfText, {
+    size: mmToPt(TYPE_MM.remarks),
+  });
+  const principalBlock = measureText(doc, model.principalRemarks || '—', halfText, {
+    size: mmToPt(TYPE_MM.remarks),
+  });
   const remarksBox = Math.max(remarksHeight, Math.max(teacherBlock.height, principalBlock.height) + 8.5);
 
   /* Keep the remarks and signatures together on the same page. */
@@ -820,19 +870,25 @@ function renderHolisticFlow(
   doc.setLineWidth(0.2);
   doc.line(A4_W_MM / 2, y, A4_W_MM / 2, y + remarksBox);
   drawWrapped(doc, "TEACHER'S REMARKS", MARGIN_MM + 2, y + 1.4, CONTENT_W / 2 - 4, {
-    size: 8,
+    size: mmToPt(TYPE_MM.remarksLabel),
     style: 'bold',
     color: colors.text,
     lineHeight: 3.4,
   });
   drawWrapped(doc, "PRINCIPAL'S REMARKS", A4_W_MM / 2 + 2, y + 1.4, CONTENT_W / 2 - 4, {
-    size: 8,
+    size: mmToPt(TYPE_MM.remarksLabel),
     style: 'bold',
     color: colors.text,
     lineHeight: 3.4,
   });
-  drawTextBlock(doc, teacherBlock, MARGIN_MM + 2, y + 5.6, { size: 7.4, color: colors.muted });
-  drawTextBlock(doc, principalBlock, A4_W_MM / 2 + 2, y + 5.6, { size: 7.4, color: colors.muted });
+  drawTextBlock(doc, teacherBlock, MARGIN_MM + 2, y + 5.6, {
+    size: mmToPt(TYPE_MM.remarks),
+    color: colors.muted,
+  });
+  drawTextBlock(doc, principalBlock, A4_W_MM / 2 + 2, y + 5.6, {
+    size: mmToPt(TYPE_MM.remarks),
+    color: colors.muted,
+  });
   y += remarksBox + 4;
 
   const third = CONTENT_W / 3;
@@ -876,7 +932,7 @@ function renderHolisticFlow(
     A4_W_MM / 2,
     footerY + 1.2,
     CONTENT_W - 4,
-    { size: 6.5, color: colors.muted, align: 'center', maxLines: 2 },
+    { size: mmToPt(TYPE_MM.footer), color: colors.muted, align: 'center', maxLines: 2 },
   );
   strokeRect(doc, MARGIN_MM, footerY, CONTENT_W, 6, colors.line, 0.2);
 
@@ -896,7 +952,7 @@ function drawCoScholasticFull(
   fillRect(doc, MARGIN_MM, y, CONTENT_W, 6.5, colors.coFill);
   strokeRect(doc, MARGIN_MM, y, CONTENT_W, 6.5, colors.line, 0.2);
   drawWrapped(doc, 'CO-SCHOLASTIC AREAS (GRADES)', MARGIN_MM + CONTENT_W / 2, y + 1.8, CONTENT_W - 2, {
-    size: 7.5,
+    size: mmToPt(TYPE_MM.sectionBar),
     style: 'bold',
     color: colors.text,
     align: 'center',
@@ -967,11 +1023,11 @@ export function renderHolisticLayout(opts: ThemeRenderOptions): void {
     doc,
     [model.infoLeft, model.infoRight],
     columnWidth,
-    { labelWidth: INFO_LABEL_W, fontSize: 8.5, minRowHeight: 5 },
+    { labelWidth: INFO_LABEL_W, fontSize: mmToPt(TYPE_MM.info), minRowHeight: 5 },
   );
   const infoBottom = drawInfoGrid(doc, infoLayout, MARGIN_MM, y, CONTENT_W, columnWidth, {
     labelWidth: INFO_LABEL_W,
-    fontSize: 8.5,
+    fontSize: mmToPt(TYPE_MM.info),
     padding: INFO_PADDING,
     colors,
   });
@@ -980,10 +1036,10 @@ export function renderHolisticLayout(opts: ThemeRenderOptions): void {
   /* Reserve the bottom of the page: remarks, signatures, footer. */
   const maxRemarksWidth = CONTENT_W / 2 - 6;
   const teacherBlock = measureText(doc, model.teacherRemarks || '—', maxRemarksWidth, {
-    size: 7.4,
+    size: mmToPt(TYPE_MM.remarks),
   });
   const principalBlock = measureText(doc, model.principalRemarks || '—', maxRemarksWidth, {
-    size: 7.4,
+    size: mmToPt(TYPE_MM.remarks),
   });
   const remarksHeight = Math.max(
     20,
@@ -1056,7 +1112,7 @@ export function renderHolisticLayout(opts: ThemeRenderOptions): void {
     LEFT_X,
     leftY + 1.4,
     LEFT_W,
-    { size: fontScale(chosen.scale, 6.5), color: colors.text, maxLines: 4, lineHeight: 3 },
+    {        size: fontScale(chosen.scale, mmToPt(TYPE_MM.gradingScale)), color: colors.text, maxLines: 4, lineHeight: 3 },
   ) + 1;
 
   const skillW = (LEFT_W - SKILLS_GAP_MM) / 2;
@@ -1099,7 +1155,7 @@ export function renderHolisticLayout(opts: ThemeRenderOptions): void {
   );
 
   let rightY = drawCoScholastic(doc, model, chosen, colors, bodyTop);
-  rightY = drawAttendance(
+  rightY = drawHolisticProfile(
     doc,
     model,
     RIGHT_X,
@@ -1116,6 +1172,7 @@ export function renderHolisticLayout(opts: ThemeRenderOptions): void {
     RIGHT_W,
     colors,
     overallBoxHeight,
+    model.totals.percentage !== null ? model.totals.summaryShort : null,
   );
 
   /*
@@ -1145,23 +1202,23 @@ export function renderHolisticLayout(opts: ThemeRenderOptions): void {
   doc.line(A4_W_MM / 2, remarksTop, A4_W_MM / 2, remarksTop + remarksHeight);
 
   drawWrapped(doc, "TEACHER'S REMARKS", MARGIN_MM + 2, remarksTop + 1.4, CONTENT_W / 2 - 4, {
-    size: 8,
+    size: mmToPt(TYPE_MM.remarksLabel),
     style: 'bold',
     color: colors.text,
     lineHeight: 3.4,
   });
   drawWrapped(doc, "PRINCIPAL'S REMARKS", A4_W_MM / 2 + 2, remarksTop + 1.4, CONTENT_W / 2 - 4, {
-    size: 8,
+    size: mmToPt(TYPE_MM.remarksLabel),
     style: 'bold',
     color: colors.text,
     lineHeight: 3.4,
   });
   drawTextBlock(doc, teacherBlock, MARGIN_MM + 2, remarksTop + 5.6, {
-    size: 7.4,
+    size: mmToPt(TYPE_MM.remarks),
     color: colors.muted,
   });
   drawTextBlock(doc, principalBlock, A4_W_MM / 2 + 2, remarksTop + 5.6, {
-    size: 7.4,
+    size: mmToPt(TYPE_MM.remarks),
     color: colors.muted,
   });
 

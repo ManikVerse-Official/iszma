@@ -80,6 +80,18 @@ export function remarkFromPercentSafe(
   return remarkFromPercent(pct, bands);
 }
 
+/*
+ * Result wording lives here so the sidebar, the on-screen card and the PDF all
+ * print the same words for the same numbers (the sidebar used to re-implement
+ * the 33% rule on its own).
+ */
+export const RESULT_PROMOTED = 'PROMOTED';
+export const RESULT_NEEDS_IMPROVEMENT = 'NEEDS IMPROVEMENT';
+
+/** The result printed for a pass/fail, from the same rule as `totals.passed`. */
+export const resultLabel = (passed: boolean): string =>
+  passed ? RESULT_PROMOTED : RESULT_NEEDS_IMPROVEMENT;
+
 /** Overall performance band shown at the bottom of the report card. */
 export function overallPerformanceLabel(pct: number | null): string {
   if (pct === null || !Number.isFinite(pct)) return UNGRADED_LABEL;

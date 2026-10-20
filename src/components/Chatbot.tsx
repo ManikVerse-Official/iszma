@@ -21,7 +21,7 @@ import {
   FOUNDER_VIEW_LABEL,
   FOUNDER_YES,
   JOY_TOPICS,
-  detectJoyLanguage,
+  joyReplyLanguage,
   getFallback,
   getSectionChips,
   getSectionGuide,
@@ -119,7 +119,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [chatState, setChatState] = useState<ChatState>('idle');
   const [projectDetails, setProjectDetails] = useState('');
-  // English is the default; Joy switches to Hinglish only when the visitor does.
+  /* Answer language follows the visitor's own message (English is the default). */
   const [lang, setLang] = useState<JoyLang>('en');
   // True while Joy waits for a yes/no on the founder profile offer.
   const [awaitingFounder, setAwaitingFounder] = useState(false);
@@ -131,6 +131,13 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
   const [input, setInput] = useState('');
   const [showGreeting, setShowGreeting] = useState(false);
   const navTimer = useRef<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  /*
+   * Whether the conversation should stay pinned to the newest message. While the
+   * visitor scrolls up to re-read older messages we leave their position alone;
+   * sending a message (or opening the chat) pins it back to the bottom.
+   */
+  const stickToBottom = useRef(true);
 
   /*
    * Section awareness: inside a section, Joy knows the walkthrough and offers
@@ -147,6 +154,16 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
     return () => window.clearTimeout(timer);
   }, []);
 
+  /*
+   * The welcome nudge is a transient hint — dismiss it by itself after a few
+   * seconds so it never keeps covering the page's own buttons/content.
+   */
+  useEffect(() => {
+    if (!showGreeting || isOpen) return;
+    const timer = window.setTimeout(() => setShowGreeting(false), 9000);
+    return () => window.clearTimeout(timer);
+  }, [showGreeting, isOpen]);
+
   useEffect(
     () => () => {
       if (navTimer.current) window.clearTimeout(navTimer.current);
@@ -154,7 +171,27 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
     [],
   );
 
+  /*
+   * Keep the latest message visible at the bottom of the conversation whenever a
+   * message arrives, Joy's walkthrough updates, or the panel opens. Only the
+   * message list scrolls — never the page or the composer. If the visitor has
+   * scrolled up, we respect that until they send their own message.
+   */
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node || !stickToBottom.current) return;
+    node.scrollTop = node.scrollHeight;
+  }, [messages, walk, isOpen]);
+
+  const handleMessagesScroll = () => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    stickToBottom.current = distanceFromBottom < 48;
+  };
+
   const openChat = () => {
+    stickToBottom.current = true;
     setShowGreeting(false);
     setIsOpen(true);
     try {
@@ -188,10 +225,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
     const userMessage = (rawOverride ?? input).trim();
     if (!userMessage) return;
 
+    /* Sending is an explicit "show me the latest" action. */
+    stickToBottom.current = true;
     setMessages((prev) => [...prev, { id: `${Date.now()}-u`, text: userMessage, from: 'user' }]);
     setInput('');
 
-    const messageLang = detectJoyLanguage(userMessage);
+    const messageLang = joyReplyLanguage(userMessage);
     setLang(messageLang);
 
     setTimeout(async () => {
@@ -287,6 +326,10 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
         if (resolved.kind === 'section') {
           pushBot(resolved.reply, { label: resolved.actionLabel, to: resolved.topic.route });
           if (resolved.navigate) scheduleNavigate(resolved.topic.route);
+        } else if (resolved.kind === 'admin') {
+          // Public Joy only points at the authenticated sign-in page; it never
+          // performs a privileged action or opens the dashboard directly.
+          pushBot(resolved.reply, { label: resolved.actionLabel, to: resolved.route });
         } else {
           pushBot(resolved.reply);
         }
@@ -323,7 +366,10 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
   };
 
   return (
-    <div className="fixed bottom-4 right-3 sm:bottom-8 sm:right-8 z-50 flex flex-col items-end gap-3">
+    // The launcher sits higher on a phone (above the browser toolbar / safe
+    // area) so it never covers the page's own buttons; on desktop it returns to
+    // the usual bottom-right corner.
+    <div className="fixed z-50 flex flex-col items-end gap-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom))] sm:right-8 sm:bottom-8">
       {isOpen ? (
         <div className="bg-bg-dark-end border border-neon-purple rounded-2xl w-[calc(100vw-1.5rem)] max-w-sm sm:w-80 sm:max-w-none shadow-neon flex flex-col max-h-[75vh] sm:max-h-[80vh]">
           <div className="flex items-center justify-between p-4 border-b border-neon-purple/30 bg-gradient-to-r from-bg-dark-end to-bg-dark-start">
@@ -351,7 +397,11 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
             </div>
           )}
 
-          <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3 bg-bg-dark-start">
+          <div
+            ref={scrollRef}
+            onScroll={handleMessagesScroll}
+            className="flex-1 p-4 overflow-y-auto flex flex-col gap-3 bg-bg-dark-start"
+          >
             {messages.map((msg) => (
               <div
                 key={msg.id}

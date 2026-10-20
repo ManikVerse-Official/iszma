@@ -25,8 +25,21 @@ export const BODY_GAP_MM = 4;
 /** Right (co-scholastic / attendance / overall) column width. */
 export const RIGHT_W_MM = CONTENT_W_MM - LEFT_W_MM - BODY_GAP_MM; // 68
 
-/** Academic table column ratios — Subject, Max, Obtained, Grade, Remarks. */
-export const ACADEMIC_COL_RATIOS = [0.34, 0.14, 0.17, 0.11, 0.24] as const;
+/**
+ * Academic table column ratios for the holistic (narrow 122mm) column.
+ *
+ * The table now mirrors the workbook: a Subject column followed by one column
+ * per component the sheet carries, then the Total column. The subject column
+ * keeps a healthy share but shrinks as more component columns are added, so the
+ * numbers never get squeezed out. Returns an array of fractions summing to 1,
+ * length = 1 (Subject) + `dataColumnCount` (components + Total).
+ */
+export function academicColumnRatios(dataColumnCount: number): number[] {
+  const columns = Math.max(1, dataColumnCount);
+  const subject = Math.min(0.62, Math.max(0.24, 0.62 - 0.055 * columns));
+  const rest = (1 - subject) / columns;
+  return [subject, ...new Array(columns).fill(rest)];
+}
 
 /** Fixed bar heights (mm). */
 export const TITLE_BAR_H = 7;

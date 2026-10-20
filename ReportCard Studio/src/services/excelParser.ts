@@ -60,11 +60,34 @@ export function parseSheetFromWorkbook(
 
   if (!json.length) return { headers: [], rows: [], headerRows: 1, dataStartRow: 1 };
 
-  const merges = ws['!merges'] || [];
+  /*
+   * The worksheet range rarely starts at column A (a mark sheet whose title
+   * block begins at B gives `!ref` = "B1:AW19"). `sheet_to_json` returns one
+   * array per row starting at that first column, so array position is NOT the
+   * Excel column index. Everything downstream identifies a column by its real
+   * Excel index, so the arrays are realigned to absolute column indexes here.
+   */
+  const sheetRange = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  const colOffset = sheetRange.s.c;
+  const rowOffset = sheetRange.s.r;
+
+  /*
+   * Merged regions are expressed in absolute sheet coordinates; the header
+   * helpers work on the row/column indexes of the JSON arrays, so the merges
+   * are shifted into that space once, here.
+   */
+  const merges = (ws['!merges'] || []).map((m) => ({
+    s: { r: m.s.r - rowOffset, c: m.s.c - colOffset },
+    e: { r: m.e.r - rowOffset, c: m.e.c - colOffset },
+  }));
 
   const { headerRows, dataStartRow } = detectHeaderRows(json, merges);
 
-  const headers = buildFlattenedHeaders(json, headerRows, merges);
+  const flattened = buildFlattenedHeaders(json, headerRows, merges, dataStartRow);
+
+  /* Absolute column index → header text (leading columns stay empty). */
+  const headers: string[] = new Array(colOffset).fill('');
+  headers.push(...flattened);
 
   const rows: Record<string, unknown>[] = [];
   for (let r = dataStartRow; r < json.length; r++) {
@@ -72,18 +95,23 @@ export function parseSheetFromWorkbook(
     const isEmpty = rawRow.every((c) => String(c ?? '').trim() === '');
     if (isEmpty) continue;
 
+    /* Same realignment for the raw cell arrays. */
+    const cells: unknown[] = new Array(colOffset).fill('');
+    cells.push(...rawRow);
+
     const obj: Record<string, unknown> = {};
     headers.forEach((h, i) => {
-      obj[h] = rawRow[i] ?? '';
+      if (!h) return;
+      obj[h] = cells[i] ?? '';
     });
 
     Object.defineProperty(obj, '__rowNumber', {
-      value: r + 1,
+      value: r + rowOffset + 1,
       enumerable: false,
     });
 
     Object.defineProperty(obj, '__cells', {
-      value: rawRow,
+      value: cells,
       enumerable: false,
     });
 
@@ -99,63 +127,110 @@ function detectHeaderRows(
 ): { headerRows: number; dataStartRow: number } {
   if (!json.length) return { headerRows: 1, dataStartRow: 1 };
 
-  let headerRows = 1;
+  const width = json.reduce((max, row) => Math.max(max, row.length), 0);
+  const maxScan = Math.min(json.length, 60);
 
-  const hasMultiRowMerges = merges.some(m => m.e.r > m.s.r && m.e.r - m.s.r <= 3);
+  /*
+   * The header region is everything above the FIRST row that begins a run of
+   * student rows. A grouped mark sheet has several header rows stacked on top of
+   * each other (title, subject groups, PT/NB/SEA/SA1/TOTAL components); the old
+   * "max merged row span" guess only counted two of them, so the component row
+   * was read as the first student and every column lost its component name.
+   */
+  let dataStartRow = -1;
 
-  if (hasMultiRowMerges) {
-    const maxRowSpan = Math.max(...merges.map(m => m.e.r - m.s.r + 1));
-    headerRows = Math.min(maxRowSpan, 4);
-
-    if (headerRows < json.length && checkNextRowsForData(json, headerRows)) {
-      return { headerRows, dataStartRow: headerRows };
-    }
-  }
-
-  for (let row = 0; row < Math.min(json.length, 8); row++) {
+  for (let row = 0; row < maxScan; row++) {
     const rowData = json[row] as unknown[];
 
     if (isEmptyRow(rowData)) continue;
+    if (isTitleLikeRowData(rowData, width)) continue;
+    if (!isLikelyDataRow(rowData)) continue;
 
-    if (row < 4 && isLikelyHeaderRow(rowData)) {
-      const nextRowIdx = row + 1;
-      if (nextRowIdx < json.length) {
-        if (checkNextRowsForData(json, nextRowIdx)) {
-          headerRows = Math.max(headerRows, nextRowIdx);
-        }
-      }
-    }
-  }
+    /* A real data row is normally followed by another data row. */
+    const next = json[row + 1] as unknown[] | undefined;
+    const nextIsData = !next || isEmptyRow(next) || isLikelyDataRow(next);
 
-  headerRows = Math.min(headerRows, 4);
-
-  for (let row = 0; row < Math.min(json.length, 6); row++) {
-    const rowData = json[row] as unknown[];
-    if (isEmptyRow(rowData)) continue;
-
-    if (isLikelyDataRow(rowData)) {
-      const candidate = row;
-      if (candidate > 0 && checkNextRowsForData(json, candidate)) {
-        headerRows = Math.min(headerRows, candidate);
-        break;
-      }
-    }
-  }
-
-  let dataStartRow = headerRows;
-  if (dataStartRow < json.length && checkNextRowsForData(json, dataStartRow)) {
-    return { headerRows, dataStartRow };
-  }
-
-  for (let row = headerRows; row < Math.min(json.length, headerRows + 4); row++) {
-    if (checkNextRowsForData(json, row)) {
+    if (nextIsData) {
       dataStartRow = row;
       break;
     }
   }
 
-  dataStartRow = Math.max(dataStartRow, headerRows);
-  return { headerRows, dataStartRow };
+  /*
+   * Text-only sheets (for example letter grades with no numeric marks) never
+   * satisfy `isLikelyDataRow`; fall back to the first row that carries no
+   * header vocabulary and whose next row looks the same.
+   */
+  if (dataStartRow < 0) {
+    for (let row = 0; row < maxScan; row++) {
+      const rowData = json[row] as unknown[];
+      if (isEmptyRow(rowData)) continue;
+      if (isTitleLikeRowData(rowData, width)) continue;
+      if (isLikelyHeaderRow(rowData)) continue;
+
+      const next = json[row + 1] as unknown[] | undefined;
+      if (!next || isEmptyRow(next) || !isLikelyHeaderRow(next)) {
+        dataStartRow = row;
+        break;
+      }
+    }
+  }
+
+  /*
+   * Nothing recognisable: keep the historical "one row per merged level"
+   * heuristic so a two-column workbook still imports.
+   */
+  if (dataStartRow < 0) {
+    const maxRowSpan = merges.length
+      ? Math.max(...merges.map((m) => m.e.r - m.s.r + 1))
+      : 1;
+    dataStartRow = Math.min(json.length, Math.max(1, Math.min(maxRowSpan, 4)));
+  }
+
+  const headerRows = Math.max(1, Math.min(dataStartRow, json.length));
+
+  /*
+   * Absorb rows that are still part of a vertically merged header block.
+   *
+   * Mark sheets put a "maximum marks" row under labels such as "S.No" that
+   * span several rows. That row is nearly all numbers, so it passes the
+   * data-row test, but it is not a student: the merge reaching into it proves
+   * it is still header context. Keeping it out of both the label rows and the
+   * data rows is what stops it being imported as student #1 (which shifted
+   * every later row and made the marks columns read off by one).
+   */
+  let firstDataRow = Math.max(headerRows, dataStartRow);
+
+  while (
+    firstDataRow < json.length &&
+    merges.some((m) => m.s.r < firstDataRow && m.e.r >= firstDataRow)
+  ) {
+    firstDataRow++;
+  }
+
+  return { headerRows, dataStartRow: firstDataRow };
+}
+
+/**
+ * A title/heading row holds at most one or two distinct values across a wide
+ * sheet. Real header rows hold one label per column.
+ */
+function isTitleLikeRowData(row: unknown[], maxCols: number): boolean {
+  if (maxCols <= 3) return false;
+
+  const distinct = new Set<string>();
+  for (const cell of row ?? []) {
+    const value = String(cell ?? '').trim();
+    if (value) distinct.add(value);
+  }
+
+  if (distinct.size === 0) return false;
+  if (distinct.size === 1) return true;
+  if (distinct.size > 2) return false;
+
+  return /(school|class|grade|std|standard|session|term|exam|report|result)/i.test(
+    [...distinct].join(' '),
+  );
 }
 
 function isEmptyRow(row: unknown[]): boolean {
@@ -241,6 +316,7 @@ function buildFlattenedHeaders(
   json: unknown[][],
   headerRows: number,
   merges: XLSX.Range[],
+  dataStartRow: number,
 ): string[] {
   if (headerRows <= 0 || !json.length) return [];
 
@@ -254,8 +330,7 @@ function buildFlattenedHeaders(
     }
   }
 
-  const lastHeaderRow = headerStructure[headerRows - 1];
-  const maxCols = lastHeaderRow.length;
+  const maxCols = headerStructure.reduce((max, row) => Math.max(max, row.length), 0);
 
   /*
    * Rows that only carry a title/heading (for example "Some Public School
@@ -267,6 +342,65 @@ function buildFlattenedHeaders(
   for (let row = 0; row < headerRows; row++) {
     if (isTitleLikeHeaderRow(headerStructure[row], maxCols)) {
       titleRows.add(row);
+    }
+  }
+
+  /*
+   * Grouped headers often only spell the subject name once, above the FIRST of
+   * its component columns (the rest of the group row is blank). Carrying that
+   * label across the blank cells — up to the next filled cell — is what lets
+   * "English | PT", "English | NB", "English | SEA", … stay attached to the
+   * same subject even when the workbook has no merged cells at all.
+   *
+   * Only the group rows (everything above the last header row) are filled; the
+   * last row carries one distinct component per column and must never be
+   * propagated sideways.
+   */
+  /*
+   * A column that holds nothing below the header cannot own an inherited
+   * label (a stray empty column next to "Attendance" must not become a second
+   * attendance column).
+   */
+  const columnHasData = (col: number): boolean => {
+    for (let row = dataStartRow; row < json.length; row++) {
+      const value = String((json[row] as unknown[] | undefined)?.[col] ?? '').trim();
+      if (value) return true;
+    }
+
+    return false;
+  };
+
+  for (let row = 0; row < headerRows - 1; row++) {
+    if (titleRows.has(row)) continue;
+    let carried = '';
+    /*
+     * How far right a carried label may reach. A label inside a merged region
+     * describes exactly that region: "S.No" (merged B3:B5) must not spill into
+     * the next blank column, or "Adm" inherits it and the admission number is
+     * read as the student's roll number. The same leak attached the merged
+     * "Father name" (E3:E5) to the mother's column. Unmerged labels keep the
+     * "carry up to the next label" behaviour that grouped-but-unmerged mark
+     * sheets rely on.
+     */
+    let carriedEndCol = -1;
+
+    for (let col = 0; col < maxCols; col++) {
+      const value = headerStructure[row][col] || '';
+      const merge = merges.find(m =>
+        col >= m.s.c && col <= m.e.c && row >= m.s.r && row <= m.e.r,
+      );
+
+      if (value) {
+        carried = value;
+        carriedEndCol = merge ? merge.e.c : maxCols - 1;
+      } else if (
+        carried &&
+        !merge &&
+        col <= carriedEndCol &&
+        columnHasData(col)
+      ) {
+        headerStructure[row][col] = carried;
+      }
     }
   }
 
@@ -321,21 +455,7 @@ function isTitleLikeHeaderRow(
   row: string[],
   maxCols: number,
 ): boolean {
-  if (maxCols <= 3) return false;
-
-  const distinct = new Set<string>();
-  for (const cell of row ?? []) {
-    const value = String(cell ?? '').trim();
-    if (value) distinct.add(value);
-  }
-
-  if (distinct.size === 0) return false;
-  if (distinct.size === 1) return true;
-  if (distinct.size > 2) return false;
-
-  return /(school|class|grade|std|standard|session|term|exam|report|result)/i.test(
-    [...distinct].join(' '),
-  );
+  return isTitleLikeRowData(row ?? [], maxCols);
 }
 
 export function parseSheetFromFileByName(

@@ -1,0 +1,37 @@
+# ============================================================================
+# Ishmaverse · Supabase CLI configuration
+# ----------------------------------------------------------------------------
+# `supabase link` already recorded this project in supabase/.temp, but the CLI
+# needs a config file to know which functions accept anonymous calls.
+#
+#   supabase db push
+#   supabase functions deploy admin-login
+#   supabase functions deploy upload-image
+#
+# Only the two functions a logged-out visitor must reach are listed here.
+# Everything else keeps the default `verify_jwt = true`, which means Supabase
+# rejects the request before your code runs when there is no valid session.
+# ============================================================================
+
+project_id = "wqrnuohvlgroytsindme"
+
+[functions.admin-login]
+# The caller is signing IN, so they have no JWT yet. The function does its own
+# credential check against admin_users before issuing a session.
+verify_jwt = false
+
+# Audience analytics. The caller is an ANONYMOUS page view, so there is no
+# session to verify — and a browser preflight (OPTIONS) never carries an
+# Authorization header, so `verify_jwt = true` made the gateway reject the
+# preflight before the function's own OPTIONS handler could answer it. That was
+# the CORS failure in the console. The function does its own work with the
+# service role and skips admins from the JWT when one is present; abuse is
+# bounded by the per-IP hash and the insert-only payload.
+[functions.track-visit]
+verify_jwt = false
+
+[functions.upload-image]
+# Used by the public greeting-card flow (guests upload a photo), so there is no
+# session to verify. Abuse is bounded inside the function (size, mime type and a
+# durable per-IP limit recorded in the `usage_events` table).
+verify_jwt = false

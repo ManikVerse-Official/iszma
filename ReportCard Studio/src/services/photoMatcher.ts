@@ -19,20 +19,166 @@ import type { PhotoMap, Student } from '../types';
  * never acceptable.
  */
 
-export async function loadPhotoZip(file: File): Promise<PhotoMap> {
-  const zip = await JSZip.loadAsync(file);
+/* ── archive safety ──────────────────────────────────────────────────── */
+
+/** A hostile or accidental archive must not be able to exhaust the browser. */
+export const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024; // 200 MB compressed input
+export const MAX_IMAGE_BYTES = 12 * 1024 * 1024; // 12 MB per photo
+export const MAX_IMAGES = 3000;
+
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']);
+
+const extOf = (name: string): string => name.split('.').pop()?.toLowerCase() ?? '';
+const baseOf = (path: string): string => path.split(/[\\/]/).pop() ?? '';
+
+/** True when any path segment climbs out of the archive root. */
+const hasTraversal = (path: string): boolean =>
+  path.split(/[\\/]/).some((segment) => segment === '..');
+
+export interface ZipPlan {
+  /** Basenames safe to read, in archive order. */
+  accepted: string[];
+  /** Basenames that appeared more than once — only the first is kept. */
+  duplicates: string[];
+  /** Everything ignored, with the reason. */
+  rejected: Array<{ name: string; reason: string }>;
+}
+
+/**
+ * Decides which archive entries may be read. Pure, so it is fully testable.
+ *
+ * Safety rules:
+ *   • path-traversal entries are refused;
+ *   • hidden / macOS resource-fork entries are ignored;
+ *   • only image extensions are considered;
+ *   • a repeated basename is reported and SKIPPED — it never silently
+ *     overwrites the first file that claimed that name.
+ */
+export function planZipEntries(names: string[]): ZipPlan {
+  const plan: ZipPlan = { accepted: [], duplicates: [], rejected: [] };
+  const seen = new Set<string>();
+
+  for (const raw of names) {
+    const name = raw.trim();
+    if (!name) continue;
+
+    if (hasTraversal(name)) {
+      plan.rejected.push({ name, reason: 'path traversal' });
+      continue;
+    }
+
+    const base = baseOf(name);
+    if (!base || base.startsWith('.') || name.startsWith('__MACOSX')) {
+      plan.rejected.push({ name, reason: 'hidden or system entry' });
+      continue;
+    }
+
+    if (!IMAGE_EXTS.has(extOf(base))) {
+      plan.rejected.push({ name, reason: 'unsupported file type' });
+      continue;
+    }
+
+    // Case-insensitive: "rahul.JPG" and "Rahul.jpg" are the same identity to a
+    // human and must not both be loaded under different keys.
+    const key = base.toLowerCase();
+    if (seen.has(key)) {
+      plan.duplicates.push(base);
+      continue;
+    }
+
+    seen.add(key);
+    plan.accepted.push(base);
+  }
+
+  return plan;
+}
+
+/** Sniffs the real format so a renamed or truncated file is not trusted. */
+export function detectImageFormat(
+  bytes: Uint8Array,
+): 'jpeg' | 'png' | 'gif' | 'webp' | 'bmp' | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg';
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'png';
+  if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'gif';
+  if (bytes.length >= 12 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'webp';
+  if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) return 'bmp';
+  return null;
+}
+
+export interface PhotoZipResult {
+  map: PhotoMap;
+  duplicates: string[];
+  rejected: Array<{ name: string; reason: string }>;
+}
+
+/**
+ * Reads a photo ZIP and reports what was skipped.
+ *
+ * Reads the bytes itself (rather than handing the File to JSZip) so the archive
+ * is size-checked first and so the parsing is testable outside a browser.
+ */
+export async function loadPhotoZipDetailed(file: File): Promise<PhotoZipResult> {
+  if (file.size > MAX_ARCHIVE_BYTES) {
+    throw new Error(
+      `That ZIP is ${Math.round(file.size / (1024 * 1024))} MB. Please keep it under ${Math.round(
+        MAX_ARCHIVE_BYTES / (1024 * 1024),
+      )} MB.`,
+    );
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(bytes);
+  } catch {
+    throw new Error(
+      'That ZIP could not be read — the file looks corrupted. Please re-create the archive and try again.',
+    );
+  }
+
+  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+  const plan = planZipEntries(entries.map((entry) => entry.name));
+
+  if (plan.accepted.length > MAX_IMAGES) {
+    throw new Error(
+      `That ZIP contains ${plan.accepted.length} photos. Please split it into batches of ${MAX_IMAGES} or fewer.`,
+    );
+  }
+
+  const byName = new Map(entries.map((entry) => [entry.name, entry]));
   const result: PhotoMap = {};
-  const imageExts = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']);
+  const rejected = [...plan.rejected];
 
-  const entries = Object.values(zip.files).filter((f) => !f.dir);
+  for (const base of plan.accepted) {
+    // Find the entry whose basename matches (the plan already de-duplicated).
+    const entry = entries.find((candidate) => baseOf(candidate.name).toLowerCase() === base.toLowerCase())
+      ?? byName.get(base);
+    if (!entry) continue;
 
-  for (const entry of entries) {
-    const base = entry.name.split(/[\\/]/).pop() ?? '';
-    const ext = base.split('.').pop()?.toLowerCase() ?? '';
-    if (!imageExts.has(ext)) continue;
+    let dataUrl: string;
+    try {
+      const blob = await entry.async('blob');
 
-    const blob = await entry.async('blob');
-    const dataUrl = await blobToDataUrl(blob);
+      if (blob.size > MAX_IMAGE_BYTES) {
+        rejected.push({ name: base, reason: 'photo too large' });
+        continue;
+      }
+
+      // Trust the bytes, not the extension: a .jpg that is really a text file
+      // must never be attached to a child's report card.
+      const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+      if (detectImageFormat(head) === null) {
+        rejected.push({ name: base, reason: 'not a readable image' });
+        continue;
+      }
+
+      dataUrl = await blobToDataUrl(blob);
+    } catch {
+      rejected.push({ name: base, reason: 'unreadable entry' });
+      continue;
+    }
+
     result[base] = dataUrl;
     result[base.toLowerCase()] = dataUrl;
     const nameNoExt = base.replace(/\.[^.]+$/, '');
@@ -40,7 +186,21 @@ export async function loadPhotoZip(file: File): Promise<PhotoMap> {
     result[nameNoExt.toLowerCase()] = dataUrl;
   }
 
-  return result;
+  if (plan.accepted.length === 0) {
+    throw new Error(
+      'No usable photos were found in that ZIP. Please include JPG, PNG, WEBP, GIF or BMP files.',
+    );
+  }
+
+  return { map: result, duplicates: plan.duplicates, rejected };
+}
+
+/**
+ * Backwards-compatible wrapper. Duplicates and skipped files are handled safely
+ * inside; use `loadPhotoZipDetailed` when you want to show them to the user.
+ */
+export async function loadPhotoZip(file: File): Promise<PhotoMap> {
+  return (await loadPhotoZipDetailed(file)).map;
 }
 
 export function blobToDataUrl(blob: Blob): Promise<string> {
@@ -247,14 +407,22 @@ function containsNameTokens(entry: PhotoEntry, rawName: string): boolean {
   return true;
 }
 
+/** A matched photo with the strength (tier) of the signal that found it. */
+export interface PhotoMatch {
+  entry: PhotoEntry;
+  /** Lower is stronger: 1 = named in the workbook, 6 = name inside filename. */
+  tier: number;
+}
+
 /**
- * Resolve the photo for one student inside a pre-built index.
- * Returns undefined (blank placeholder) when the match is missing or ambiguous.
+ * Best match for one student, with the tier that produced it.
+ * Returns undefined when nothing matches, or when two equally strong candidates
+ * exist and neither carries the student's name.
  */
-export function resolveStudentPhoto(
+export function resolveStudentPhotoMatch(
   index: PhotoIndex,
   student: PhotoStudent,
-): string | undefined {
+): PhotoMatch | undefined {
   let bestTier: number | null = null;
   let best: PhotoEntry[] = [];
 
@@ -269,8 +437,8 @@ export function resolveStudentPhoto(
     }
   }
 
-  if (best.length === 0) return undefined;
-  if (best.length === 1) return best[0].dataUrl;
+  if (best.length === 0 || bestTier === null) return undefined;
+  if (best.length === 1) return { entry: best[0], tier: bestTier };
 
   /* Multiple candidates at the same strength: only accept one that also
    * carries the student's name. Otherwise leave the photo blank rather than
@@ -280,18 +448,33 @@ export function resolveStudentPhoto(
     (entry) =>
       (name !== '' && entry.key === name) || containsNameTokens(entry, student.name),
   );
-  if (nameMatch.length === 1) return nameMatch[0].dataUrl;
+  if (nameMatch.length === 1) return { entry: nameMatch[0], tier: bestTier };
 
   return undefined;
 }
 
 /**
+ * Resolve the photo for one student inside a pre-built index.
+ * Returns undefined (blank placeholder) when the match is missing or ambiguous.
+ */
+export function resolveStudentPhoto(
+  index: PhotoIndex,
+  student: PhotoStudent,
+): string | undefined {
+  return resolveStudentPhotoMatch(index, student)?.entry.dataUrl;
+}
+
+/**
  * Resolve photos for a whole batch.
  *
- * A photo is only handed out when exactly one student owns it at the strongest
- * matching tier. If two students would receive the same picture the ambiguous
- * ones are left blank (and reported), because attaching the wrong child's
- * photograph is worse than showing none.
+ * A photo is handed to at most one student, and only when that student has the
+ * STRONGEST claim on it. If two students claim the same picture at the same
+ * strength the picture is refused for both (and both are reported), because
+ * attaching the wrong child's photograph is worse than showing none.
+ *
+ * A strong identifier beats a weak name match: "27_Aarav Sharma.jpg" goes to the
+ * child whose roll number is 27, not to a same-named classmate who merely has
+ * their name inside the file name.
  */
 export function resolvePhotosForStudents(
   index: PhotoIndex,
@@ -299,24 +482,36 @@ export function resolvePhotosForStudents(
 ): { photos: Map<string, string>; ambiguous: string[] } {
   const photos = new Map<string, string>();
   const ambiguous: string[] = [];
-  const claims = new Map<string, string[]>(); /* dataUrl → student ids */
+  /* dataUrl → every student that claimed it, with the tier of that claim. */
+  const claims = new Map<string, { studentId: string; tier: number }[]>();
 
   for (const student of students) {
-    const photo = resolveStudentPhoto(index, student);
-    if (!photo) continue;
-    photos.set(student.studentId, photo);
-    const owners = claims.get(photo) ?? [];
-    owners.push(student.studentId);
-    claims.set(photo, owners);
+    const match = resolveStudentPhotoMatch(index, student);
+    if (!match) continue;
+    const owners = claims.get(match.entry.dataUrl) ?? [];
+    owners.push({ studentId: student.studentId, tier: match.tier });
+    claims.set(match.entry.dataUrl, owners);
   }
 
-  for (const owners of claims.values()) {
-    if (owners.length <= 1) continue;
-    /* Same picture for two children — refuse it for both. */
-    for (const owner of owners) {
-      photos.delete(owner);
-      ambiguous.push(owner);
+  for (const [dataUrl, owners] of claims) {
+    if (owners.length === 1) {
+      photos.set(owners[0].studentId, dataUrl);
+      continue;
     }
+
+    const strongest = Math.min(...owners.map((owner) => owner.tier));
+    const winners = owners.filter((owner) => owner.tier === strongest);
+
+    if (winners.length === 1) {
+      photos.set(winners[0].studentId, dataUrl);
+      for (const owner of owners) {
+        if (owner.studentId !== winners[0].studentId) ambiguous.push(owner.studentId);
+      }
+      continue;
+    }
+
+    /* Same picture, same strength, more than one child — refuse it for all. */
+    for (const owner of owners) ambiguous.push(owner.studentId);
   }
 
   return { photos, ambiguous };

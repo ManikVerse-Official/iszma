@@ -24523,9 +24523,9 @@ var require_xlsx = __commonJS({
         };
         return out;
       }
-      function write_FontFlags(font, o) {
+      function write_FontFlags(font2, o) {
         if (!o) o = new_buf(2);
-        var grbit = (font.italic ? 2 : 0) | (font.strike ? 8 : 0) | (font.outline ? 16 : 0) | (font.shadow ? 32 : 0) | (font.condense ? 64 : 0) | (font.extend ? 128 : 0);
+        var grbit = (font2.italic ? 2 : 0) | (font2.strike ? 8 : 0) | (font2.outline ? 16 : 0) | (font2.shadow ? 32 : 0) | (font2.condense ? 64 : 0) | (font2.extend ? 128 : 0);
         o.write_shift(1, grbit);
         o.write_shift(1, 0);
         return o;
@@ -29665,7 +29665,7 @@ var require_xlsx = __commonJS({
         };
       }();
       function parse_rpr(rpr) {
-        var font = {}, m = rpr.match(tagregex), i = 0;
+        var font2 = {}, m = rpr.match(tagregex), i = 0;
         var pass = false;
         if (m) for (; i != m.length; ++i) {
           var y = parsexmltag(m[i]);
@@ -29678,33 +29678,33 @@ var require_xlsx = __commonJS({
               if (!y.val) break;
             case "<shadow>":
             case "<shadow/>":
-              font.shadow = 1;
+              font2.shadow = 1;
               break;
             case "</shadow>":
               break;
             case "<charset":
               if (y.val == "1") break;
-              font.cp = CS2CP[parseInt(y.val, 10)];
+              font2.cp = CS2CP[parseInt(y.val, 10)];
               break;
             case "<outline":
               if (!y.val) break;
             case "<outline>":
             case "<outline/>":
-              font.outline = 1;
+              font2.outline = 1;
               break;
             case "</outline>":
               break;
             case "<rFont":
-              font.name = y.val;
+              font2.name = y.val;
               break;
             case "<sz":
-              font.sz = y.val;
+              font2.sz = y.val;
               break;
             case "<strike":
               if (!y.val) break;
             case "<strike>":
             case "<strike/>":
-              font.strike = 1;
+              font2.strike = 1;
               break;
             case "</strike>":
               break;
@@ -29712,18 +29712,18 @@ var require_xlsx = __commonJS({
               if (!y.val) break;
               switch (y.val) {
                 case "double":
-                  font.uval = "double";
+                  font2.uval = "double";
                   break;
                 case "singleAccounting":
-                  font.uval = "single-accounting";
+                  font2.uval = "single-accounting";
                   break;
                 case "doubleAccounting":
-                  font.uval = "double-accounting";
+                  font2.uval = "double-accounting";
                   break;
               }
             case "<u>":
             case "<u/>":
-              font.u = 1;
+              font2.u = 1;
               break;
             case "</u>":
               break;
@@ -29731,7 +29731,7 @@ var require_xlsx = __commonJS({
               if (y.val == "0") break;
             case "<b>":
             case "<b/>":
-              font.b = 1;
+              font2.b = 1;
               break;
             case "</b>":
               break;
@@ -29739,26 +29739,26 @@ var require_xlsx = __commonJS({
               if (y.val == "0") break;
             case "<i>":
             case "<i/>":
-              font.i = 1;
+              font2.i = 1;
               break;
             case "</i>":
               break;
             case "<color":
-              if (y.rgb) font.color = y.rgb.slice(2, 8);
+              if (y.rgb) font2.color = y.rgb.slice(2, 8);
               break;
             case "<color>":
             case "<color/>":
             case "</color>":
               break;
             case "<family":
-              font.family = y.val;
+              font2.family = y.val;
               break;
             case "<family>":
             case "<family/>":
             case "</family>":
               break;
             case "<vertAlign":
-              font.valign = y.val;
+              font2.valign = y.val;
               break;
             case "<vertAlign>":
             case "<vertAlign/>":
@@ -29784,7 +29784,7 @@ var require_xlsx = __commonJS({
               if (y[0].charCodeAt(1) !== 47 && !pass) throw new Error("Unrecognized rich format " + y[0]);
           }
         }
-        return font;
+        return font2;
       }
       var parse_rs = function() {
         var tregex = matchtag("t"), rpregex = matchtag("rPr");
@@ -29805,27 +29805,27 @@ var require_xlsx = __commonJS({
       }();
       var rs_to_html = /* @__PURE__ */ function parse_rs_factory() {
         var nlregex = /(\r\n|\n)/g;
-        function parse_rpr2(font, intro, outro) {
+        function parse_rpr2(font2, intro, outro) {
           var style = [];
-          if (font.u) style.push("text-decoration: underline;");
-          if (font.uval) style.push("text-underline-style:" + font.uval + ";");
-          if (font.sz) style.push("font-size:" + font.sz + "pt;");
-          if (font.outline) style.push("text-effect: outline;");
-          if (font.shadow) style.push("text-shadow: auto;");
+          if (font2.u) style.push("text-decoration: underline;");
+          if (font2.uval) style.push("text-underline-style:" + font2.uval + ";");
+          if (font2.sz) style.push("font-size:" + font2.sz + "pt;");
+          if (font2.outline) style.push("text-effect: outline;");
+          if (font2.shadow) style.push("text-shadow: auto;");
           intro.push('<span style="' + style.join("") + '">');
-          if (font.b) {
+          if (font2.b) {
             intro.push("<b>");
             outro.push("</b>");
           }
-          if (font.i) {
+          if (font2.i) {
             intro.push("<i>");
             outro.push("</i>");
           }
-          if (font.strike) {
+          if (font2.strike) {
             intro.push("<s>");
             outro.push("</s>");
           }
-          var align = font.valign || "";
+          var align = font2.valign || "";
           if (align == "superscript" || align == "super") align = "sup";
           else if (align == "subscript") align = "sub";
           if (align != "") {
@@ -29833,7 +29833,7 @@ var require_xlsx = __commonJS({
             outro.push("</" + align + ">");
           }
           outro.push("</span>");
-          return font;
+          return font2;
         }
         function r_to_html(r) {
           var terms = [[], r.v, []];
@@ -30675,7 +30675,7 @@ var require_xlsx = __commonJS({
       }
       function parse_fonts(t, styles, themes, opts) {
         styles.Fonts = [];
-        var font = {};
+        var font2 = {};
         var pass = false;
         (t[0].match(tagregex) || []).forEach(function(x) {
           var y = parsexmltag(x);
@@ -30689,99 +30689,99 @@ var require_xlsx = __commonJS({
               break;
             case "</font>":
             case "<font/>":
-              styles.Fonts.push(font);
-              font = {};
+              styles.Fonts.push(font2);
+              font2 = {};
               break;
             case "<name":
-              if (y.val) font.name = utf8read(y.val);
+              if (y.val) font2.name = utf8read(y.val);
               break;
             case "<name/>":
             case "</name>":
               break;
             case "<b":
-              font.bold = y.val ? parsexmlbool(y.val) : 1;
+              font2.bold = y.val ? parsexmlbool(y.val) : 1;
               break;
             case "<b/>":
-              font.bold = 1;
+              font2.bold = 1;
               break;
             case "<i":
-              font.italic = y.val ? parsexmlbool(y.val) : 1;
+              font2.italic = y.val ? parsexmlbool(y.val) : 1;
               break;
             case "<i/>":
-              font.italic = 1;
+              font2.italic = 1;
               break;
             case "<u":
               switch (y.val) {
                 case "none":
-                  font.underline = 0;
+                  font2.underline = 0;
                   break;
                 case "single":
-                  font.underline = 1;
+                  font2.underline = 1;
                   break;
                 case "double":
-                  font.underline = 2;
+                  font2.underline = 2;
                   break;
                 case "singleAccounting":
-                  font.underline = 33;
+                  font2.underline = 33;
                   break;
                 case "doubleAccounting":
-                  font.underline = 34;
+                  font2.underline = 34;
                   break;
               }
               break;
             case "<u/>":
-              font.underline = 1;
+              font2.underline = 1;
               break;
             case "<strike":
-              font.strike = y.val ? parsexmlbool(y.val) : 1;
+              font2.strike = y.val ? parsexmlbool(y.val) : 1;
               break;
             case "<strike/>":
-              font.strike = 1;
+              font2.strike = 1;
               break;
             case "<outline":
-              font.outline = y.val ? parsexmlbool(y.val) : 1;
+              font2.outline = y.val ? parsexmlbool(y.val) : 1;
               break;
             case "<outline/>":
-              font.outline = 1;
+              font2.outline = 1;
               break;
             case "<shadow":
-              font.shadow = y.val ? parsexmlbool(y.val) : 1;
+              font2.shadow = y.val ? parsexmlbool(y.val) : 1;
               break;
             case "<shadow/>":
-              font.shadow = 1;
+              font2.shadow = 1;
               break;
             case "<condense":
-              font.condense = y.val ? parsexmlbool(y.val) : 1;
+              font2.condense = y.val ? parsexmlbool(y.val) : 1;
               break;
             case "<condense/>":
-              font.condense = 1;
+              font2.condense = 1;
               break;
             case "<extend":
-              font.extend = y.val ? parsexmlbool(y.val) : 1;
+              font2.extend = y.val ? parsexmlbool(y.val) : 1;
               break;
             case "<extend/>":
-              font.extend = 1;
+              font2.extend = 1;
               break;
             case "<sz":
-              if (y.val) font.sz = +y.val;
+              if (y.val) font2.sz = +y.val;
               break;
             case "<sz/>":
             case "</sz>":
               break;
             case "<vertAlign":
-              if (y.val) font.vertAlign = y.val;
+              if (y.val) font2.vertAlign = y.val;
               break;
             case "<vertAlign/>":
             case "</vertAlign>":
               break;
             case "<family":
-              if (y.val) font.family = parseInt(y.val, 10);
+              if (y.val) font2.family = parseInt(y.val, 10);
               break;
             case "<family/>":
             case "</family>":
               break;
             case "<scheme":
-              if (y.val) font.scheme = y.val;
+              if (y.val) font2.scheme = y.val;
               break;
             case "<scheme/>":
             case "</scheme>":
@@ -30791,20 +30791,20 @@ var require_xlsx = __commonJS({
               y.codepage = CS2CP[parseInt(y.val, 10)];
               break;
             case "<color":
-              if (!font.color) font.color = {};
-              if (y.auto) font.color.auto = parsexmlbool(y.auto);
-              if (y.rgb) font.color.rgb = y.rgb.slice(-6);
+              if (!font2.color) font2.color = {};
+              if (y.auto) font2.color.auto = parsexmlbool(y.auto);
+              if (y.rgb) font2.color.rgb = y.rgb.slice(-6);
               else if (y.indexed) {
-                font.color.index = parseInt(y.indexed, 10);
-                var icv = XLSIcv[font.color.index];
-                if (font.color.index == 81) icv = XLSIcv[1];
+                font2.color.index = parseInt(y.indexed, 10);
+                var icv = XLSIcv[font2.color.index];
+                if (font2.color.index == 81) icv = XLSIcv[1];
                 if (!icv) icv = XLSIcv[1];
-                font.color.rgb = icv[0].toString(16) + icv[1].toString(16) + icv[2].toString(16);
+                font2.color.rgb = icv[0].toString(16) + icv[1].toString(16) + icv[2].toString(16);
               } else if (y.theme) {
-                font.color.theme = parseInt(y.theme, 10);
-                if (y.tint) font.color.tint = parseFloat(y.tint);
+                font2.color.theme = parseInt(y.theme, 10);
+                if (y.tint) font2.color.tint = parseFloat(y.tint);
                 if (y.theme && themes.themeElements && themes.themeElements.clrScheme) {
-                  font.color.rgb = rgb_tint(themes.themeElements.clrScheme[font.color.theme].rgb, font.color.tint || 0);
+                  font2.color.rgb = rgb_tint(themes.themeElements.clrScheme[font2.color.theme].rgb, font2.color.tint || 0);
                 }
               }
               break;
@@ -31057,25 +31057,25 @@ var require_xlsx = __commonJS({
         out.name = parse_XLWideString(data, length - 21);
         return out;
       }
-      function write_BrtFont(font, o) {
+      function write_BrtFont(font2, o) {
         if (!o) o = new_buf(25 + 4 * 32);
-        o.write_shift(2, font.sz * 20);
-        write_FontFlags(font, o);
-        o.write_shift(2, font.bold ? 700 : 400);
+        o.write_shift(2, font2.sz * 20);
+        write_FontFlags(font2, o);
+        o.write_shift(2, font2.bold ? 700 : 400);
         var sss = 0;
-        if (font.vertAlign == "superscript") sss = 1;
-        else if (font.vertAlign == "subscript") sss = 2;
+        if (font2.vertAlign == "superscript") sss = 1;
+        else if (font2.vertAlign == "subscript") sss = 2;
         o.write_shift(2, sss);
-        o.write_shift(1, font.underline || 0);
-        o.write_shift(1, font.family || 0);
-        o.write_shift(1, font.charset || 0);
+        o.write_shift(1, font2.underline || 0);
+        o.write_shift(1, font2.family || 0);
+        o.write_shift(1, font2.charset || 0);
         o.write_shift(1, 0);
-        write_BrtColor(font.color, o);
+        write_BrtColor(font2.color, o);
         var scheme = 0;
-        if (font.scheme == "major") scheme = 1;
-        if (font.scheme == "minor") scheme = 2;
+        if (font2.scheme == "major") scheme = 1;
+        if (font2.scheme == "minor") scheme = 2;
         o.write_shift(1, scheme);
-        write_XLWideString(font.name, o);
+        write_XLWideString(font2.name, o);
         return o.length > o.l ? o.slice(0, o.l) : o;
       }
       var XLSBFillPTNames = [
@@ -49784,8 +49784,86 @@ var import_server = __toESM(require_server_node(), 1);
 var XLSX = __toESM(require_xlsx(), 1);
 
 // src/utils/normalization.ts
+var DEVANAGARI_ALIASES = [
+  [/जन्म\s*(तिथि|दिनांक|दिन)/g, "dob"],
+  [/जन्म\s*तारीख/g, "dob"],
+  [/जन्म/g, "dob"],
+  [/कुल\s*कार्य\s*दिवस/g, "working days"],
+  [/कार्य\s*दिवस/g, "working days"],
+  [/उपस्थित\s*दिन/g, "days present"],
+  [/उपस्थिति/g, "attendance"],
+  [/प्राप्तांक/g, "marks obtained"],
+  [/पूर्णांक/g, "max marks"],
+  [/अधिकतम\s*अंक/g, "max marks"],
+  [/अधिकतम/g, "max"],
+  [/कुल\s*योग/g, "grand total"],
+  [/कुल\s*अंक/g, "total marks"],
+  [/कुल/g, "total"],
+  [/योग/g, "total"],
+  [/प्रतिशत/g, "percentage"],
+  [/श्रेणी/g, "grade"],
+  [/ग्रेड/g, "grade"],
+  [/परिणाम/g, "result"],
+  [/टिप्पणी(याँ|यां)?/g, "remarks"],
+  [/विषय/g, "subject"],
+  [/प्रवेश\s*(संख्या|नंबर)?/g, "admission no"],
+  [/अनुक्रमांक/g, "roll no"],
+  [/क्रमांक/g, "roll no"],
+  [/अनुभाग/g, "section"],
+  [/वर्ग/g, "class"],
+  [/कक्षा/g, "class"],
+  [/छात्र\s*का\s*नाम/g, "student name"],
+  [/विद्यार्थी\s*का\s*नाम/g, "student name"],
+  [/छात्र/g, "student"],
+  [/विद्यार्थी/g, "student"],
+  [/पिता(\s*का)?\s*नाम/g, "father name"],
+  [/पिता/g, "father"],
+  [/माता(\s*का)?\s*नाम/g, "mother name"],
+  [/माता|मां|माँ/g, "mother"],
+  [/नाम/g, "name"],
+  /* Examination components. */
+  [/अर्ध\s*वार्षिक/g, "half yearly"],
+  [/वार्षिक/g, "annual"],
+  [/त्रैमासिक/g, "term"],
+  [/इकाई\s*परीक्षा/g, "unit test"],
+  [/मासिक/g, "monthly"],
+  [/परीक्षा/g, "exam"],
+  [/प्रायोगिक|प्रैक्टिकल/g, "practical"],
+  [/मौखिक/g, "oral"],
+  [/लिखित/g, "written"],
+  [/आंतरिक/g, "internal"],
+  [/प्रोजेक्ट/g, "project"],
+  [/नोटबुक/g, "notebook"],
+  [/गृहकार्य/g, "homework"],
+  [/असाइनमेंट|कार्यपत्रिका/g, "assignment"],
+  [/गतिविधि/g, "activity"],
+  [/प्रश्नपत्र/g, "paper"],
+  /* Subjects. */
+  [/सामाजिक\s*विज्ञान/g, "social science"],
+  [/सामान्य\s*ज्ञान/g, "general knowledge"],
+  [/शारीरिक\s*शिक्षा/g, "physical education"],
+  [/पर्यावरण/g, "evs"],
+  [/अंग्रेजी/g, "english"],
+  [/हिंदी|हिन्दी/g, "hindi"],
+  [/गणित/g, "math"],
+  [/विज्ञान/g, "science"],
+  [/संस्कृत/g, "sanskrit"],
+  [/कंप्यूटर/g, "computer"],
+  [/कला|चित्रकला/g, "art"],
+  [/संगीत/g, "music"],
+  [/खेल/g, "sports"],
+  [/नैतिक/g, "moral"],
+  [/उर्दू/g, "urdu"],
+  [/पंजाबी/g, "punjabi"]
+];
 function normalizeHeader(input) {
-  return input.toLowerCase().trim().replace(/[._\-/\\]/g, " ").replace(/['''`"]/g, "").replace(/\s+/g, " ").replace(/\s*\(.*?\)\s*/g, " ").replace(/\s*\[.*?\]\s*/g, " ").replace(/[.,:;]/g, " ").replace(/\s+/g, " ").trim();
+  let source = input ?? "";
+  if (/[\u0900-\u097F]/.test(source)) {
+    for (const [pattern, english] of DEVANAGARI_ALIASES) {
+      source = source.replace(pattern, english);
+    }
+  }
+  return source.toLowerCase().trim().replace(/[._\-/\\]/g, " ").replace(/['''`"]/g, "").replace(/\s+/g, " ").replace(/\s*\(.*?\)\s*/g, " ").replace(/\s*\[.*?\]\s*/g, " ").replace(/[.,:;]/g, " ").replace(/\s+/g, " ").trim();
 }
 var FIELD_ALIASES = [
   {
@@ -49827,6 +49905,8 @@ var FIELD_ALIASES = [
       "admission no",
       "admission number",
       "adm no",
+      "adm",
+      "admn no",
       "admission",
       "registration no",
       "registration number",
@@ -50139,24 +50219,35 @@ function parseSheetFromWorkbook(wb, sheetName) {
     dateNF: "yyyy-mm-dd"
   });
   if (!json.length) return { headers: [], rows: [], headerRows: 1, dataStartRow: 1 };
-  const merges = ws["!merges"] || [];
+  const sheetRange = XLSX.utils.decode_range(ws["!ref"] || "A1");
+  const colOffset = sheetRange.s.c;
+  const rowOffset = sheetRange.s.r;
+  const merges = (ws["!merges"] || []).map((m) => ({
+    s: { r: m.s.r - rowOffset, c: m.s.c - colOffset },
+    e: { r: m.e.r - rowOffset, c: m.e.c - colOffset }
+  }));
   const { headerRows, dataStartRow } = detectHeaderRows(json, merges);
-  const headers = buildFlattenedHeaders(json, headerRows, merges);
+  const flattened = buildFlattenedHeaders(json, headerRows, merges, dataStartRow);
+  const headers = new Array(colOffset).fill("");
+  headers.push(...flattened);
   const rows = [];
   for (let r = dataStartRow; r < json.length; r++) {
     const rawRow = json[r] ?? [];
     const isEmpty = rawRow.every((c) => String(c ?? "").trim() === "");
     if (isEmpty) continue;
+    const cells = new Array(colOffset).fill("");
+    cells.push(...rawRow);
     const obj = {};
     headers.forEach((h, i) => {
-      obj[h] = rawRow[i] ?? "";
+      if (!h) return;
+      obj[h] = cells[i] ?? "";
     });
     Object.defineProperty(obj, "__rowNumber", {
-      value: r + 1,
+      value: r + rowOffset + 1,
       enumerable: false
     });
     Object.defineProperty(obj, "__cells", {
-      value: rawRow,
+      value: cells,
       enumerable: false
     });
     rows.push(obj);
@@ -50165,51 +50256,58 @@ function parseSheetFromWorkbook(wb, sheetName) {
 }
 function detectHeaderRows(json, merges) {
   if (!json.length) return { headerRows: 1, dataStartRow: 1 };
-  let headerRows = 1;
-  const hasMultiRowMerges = merges.some((m) => m.e.r > m.s.r && m.e.r - m.s.r <= 3);
-  if (hasMultiRowMerges) {
-    const maxRowSpan = Math.max(...merges.map((m) => m.e.r - m.s.r + 1));
-    headerRows = Math.min(maxRowSpan, 4);
-    if (headerRows < json.length && checkNextRowsForData(json, headerRows)) {
-      return { headerRows, dataStartRow: headerRows };
-    }
-  }
-  for (let row = 0; row < Math.min(json.length, 8); row++) {
+  const width = json.reduce((max, row) => Math.max(max, row.length), 0);
+  const maxScan = Math.min(json.length, 60);
+  let dataStartRow = -1;
+  for (let row = 0; row < maxScan; row++) {
     const rowData = json[row];
     if (isEmptyRow(rowData)) continue;
-    if (row < 4 && isLikelyHeaderRow(rowData)) {
-      const nextRowIdx = row + 1;
-      if (nextRowIdx < json.length) {
-        if (checkNextRowsForData(json, nextRowIdx)) {
-          headerRows = Math.max(headerRows, nextRowIdx);
-        }
-      }
-    }
-  }
-  headerRows = Math.min(headerRows, 4);
-  for (let row = 0; row < Math.min(json.length, 6); row++) {
-    const rowData = json[row];
-    if (isEmptyRow(rowData)) continue;
-    if (isLikelyDataRow(rowData)) {
-      const candidate = row;
-      if (candidate > 0 && checkNextRowsForData(json, candidate)) {
-        headerRows = Math.min(headerRows, candidate);
-        break;
-      }
-    }
-  }
-  let dataStartRow = headerRows;
-  if (dataStartRow < json.length && checkNextRowsForData(json, dataStartRow)) {
-    return { headerRows, dataStartRow };
-  }
-  for (let row = headerRows; row < Math.min(json.length, headerRows + 4); row++) {
-    if (checkNextRowsForData(json, row)) {
+    if (isTitleLikeRowData(rowData, width)) continue;
+    if (!isLikelyDataRow(rowData)) continue;
+    const next = json[row + 1];
+    const nextIsData = !next || isEmptyRow(next) || isLikelyDataRow(next);
+    if (nextIsData) {
       dataStartRow = row;
       break;
     }
   }
-  dataStartRow = Math.max(dataStartRow, headerRows);
-  return { headerRows, dataStartRow };
+  if (dataStartRow < 0) {
+    for (let row = 0; row < maxScan; row++) {
+      const rowData = json[row];
+      if (isEmptyRow(rowData)) continue;
+      if (isTitleLikeRowData(rowData, width)) continue;
+      if (isLikelyHeaderRow(rowData)) continue;
+      const next = json[row + 1];
+      if (!next || isEmptyRow(next) || !isLikelyHeaderRow(next)) {
+        dataStartRow = row;
+        break;
+      }
+    }
+  }
+  if (dataStartRow < 0) {
+    const maxRowSpan = merges.length ? Math.max(...merges.map((m) => m.e.r - m.s.r + 1)) : 1;
+    dataStartRow = Math.min(json.length, Math.max(1, Math.min(maxRowSpan, 4)));
+  }
+  const headerRows = Math.max(1, Math.min(dataStartRow, json.length));
+  let firstDataRow = Math.max(headerRows, dataStartRow);
+  while (firstDataRow < json.length && merges.some((m) => m.s.r < firstDataRow && m.e.r >= firstDataRow)) {
+    firstDataRow++;
+  }
+  return { headerRows, dataStartRow: firstDataRow };
+}
+function isTitleLikeRowData(row, maxCols) {
+  if (maxCols <= 3) return false;
+  const distinct = /* @__PURE__ */ new Set();
+  for (const cell of row ?? []) {
+    const value = String(cell ?? "").trim();
+    if (value) distinct.add(value);
+  }
+  if (distinct.size === 0) return false;
+  if (distinct.size === 1) return true;
+  if (distinct.size > 2) return false;
+  return /(school|class|grade|std|standard|session|term|exam|report|result)/i.test(
+    [...distinct].join(" ")
+  );
 }
 function isEmptyRow(row) {
   if (!row || row.length === 0) return true;
@@ -50235,18 +50333,6 @@ function isLikelyHeaderRow(row) {
   if (hasCommonHeaderTerms && textRatio > 0.5) return true;
   return textRatio > 0.7;
 }
-function checkNextRowsForData(json, startRow) {
-  const rowsToCheck = Math.min(3, json.length - startRow);
-  if (rowsToCheck < 1) return false;
-  let dataRowCount = 0;
-  for (let i = 0; i < rowsToCheck; i++) {
-    const row = json[startRow + i];
-    if (isLikelyDataRow(row)) {
-      dataRowCount++;
-    }
-  }
-  return dataRowCount >= Math.min(2, rowsToCheck);
-}
 function isLikelyDataRow(row) {
   if (!row || row.length === 0) return false;
   const textCount = row.filter((cell) => {
@@ -50269,7 +50355,7 @@ function isLikelyDataRow(row) {
   if (hasHeaderTerms && numericRatio < 0.3) return false;
   return hasMix || mostlyNumeric;
 }
-function buildFlattenedHeaders(json, headerRows, merges) {
+function buildFlattenedHeaders(json, headerRows, merges, dataStartRow) {
   if (headerRows <= 0 || !json.length) return [];
   const headerStructure = [];
   for (let row = 0; row < headerRows; row++) {
@@ -50280,12 +50366,35 @@ function buildFlattenedHeaders(json, headerRows, merges) {
       headerStructure.push([]);
     }
   }
-  const lastHeaderRow = headerStructure[headerRows - 1];
-  const maxCols = lastHeaderRow.length;
+  const maxCols = headerStructure.reduce((max, row) => Math.max(max, row.length), 0);
   const titleRows = /* @__PURE__ */ new Set();
   for (let row = 0; row < headerRows; row++) {
     if (isTitleLikeHeaderRow(headerStructure[row], maxCols)) {
       titleRows.add(row);
+    }
+  }
+  const columnHasData2 = (col) => {
+    for (let row = dataStartRow; row < json.length; row++) {
+      const value = String(json[row]?.[col] ?? "").trim();
+      if (value) return true;
+    }
+    return false;
+  };
+  for (let row = 0; row < headerRows - 1; row++) {
+    if (titleRows.has(row)) continue;
+    let carried = "";
+    let carriedEndCol = -1;
+    for (let col = 0; col < maxCols; col++) {
+      const value = headerStructure[row][col] || "";
+      const merge = merges.find(
+        (m) => col >= m.s.c && col <= m.e.c && row >= m.s.r && row <= m.e.r
+      );
+      if (value) {
+        carried = value;
+        carriedEndCol = merge ? merge.e.c : maxCols - 1;
+      } else if (carried && !merge && col <= carriedEndCol && columnHasData2(col)) {
+        headerStructure[row][col] = carried;
+      }
     }
   }
   const headers = [];
@@ -50322,18 +50431,7 @@ function buildFlattenedHeaders(json, headerRows, merges) {
   return headers;
 }
 function isTitleLikeHeaderRow(row, maxCols) {
-  if (maxCols <= 3) return false;
-  const distinct = /* @__PURE__ */ new Set();
-  for (const cell of row ?? []) {
-    const value = String(cell ?? "").trim();
-    if (value) distinct.add(value);
-  }
-  if (distinct.size === 0) return false;
-  if (distinct.size === 1) return true;
-  if (distinct.size > 2) return false;
-  return /(school|class|grade|std|standard|session|term|exam|report|result)/i.test(
-    [...distinct].join(" ")
-  );
+  return isTitleLikeRowData(row ?? [], maxCols);
 }
 
 // src/services/dynamicExcelParser.ts
@@ -50745,6 +50843,12 @@ function detectHeaderLayout(ws, range, mergedCells) {
     }
   }
   if (dataStartRow < 0) dataStartRow = firstRow + 1;
+  let firstDataRow = dataStartRow;
+  while (firstDataRow <= range.e.r && mergedCells.some(
+    (merge) => merge.startRow < firstDataRow && merge.endRow >= firstDataRow
+  )) {
+    firstDataRow++;
+  }
   const headerEndRow = Math.max(firstRow, dataStartRow - 1);
   const titleRows = [];
   for (let row = firstRow; row <= headerEndRow; row++) {
@@ -50756,7 +50860,7 @@ function detectHeaderLayout(ws, range, mergedCells) {
     headerRows: headerEndRow - firstRow + 1,
     headerStartRow: firstRow,
     headerEndRow,
-    dataStartRow: headerEndRow + 1,
+    dataStartRow: Math.max(headerEndRow + 1, firstDataRow),
     titleRows
   };
 }
@@ -50845,25 +50949,37 @@ function buildEffectiveColumnHeaders(ws, range, layout, mergedCells) {
   if (headerRowIndices.length === 0) {
     headerRowIndices.push(layout.headerEndRow);
   }
+  const lastHeaderRow = headerRowIndices[headerRowIndices.length - 1];
+  const filledText = /* @__PURE__ */ new Map();
+  for (const row of headerRowIndices) {
+    let carried = "";
+    let carriedEndCol = -1;
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      let text = cleanHeaderText(getCellText(ws, row, col));
+      const merge = findMergeAtPosition(mergedCells, row, col);
+      if (!text && merge) {
+        text = cleanHeaderText(merge.value);
+      }
+      if (text) {
+        carried = text;
+        carriedEndCol = merge ? merge.endCol : range.e.c;
+      } else if (carried && row !== lastHeaderRow && !merge && col <= carriedEndCol && /*
+       * A column with no data below the header cannot own an inherited
+       * label: a stray empty column next to "Attendance" would otherwise be
+       * classified as a second attendance column and shadow the real one.
+       */
+      columnHasData(ws, range, col, layout.dataStartRow)) {
+        text = carried;
+      }
+      filledText.set(`${row}:${col}`, text);
+    }
+  }
   for (let col = range.s.c; col <= range.e.c; col++) {
     const labels = [];
     for (const row of headerRowIndices) {
-      let text = getCellText(
-        ws,
-        row,
-        col
-      );
-      if (!text) {
-        const merge = findMergeAtPosition(
-          mergedCells,
-          row,
-          col
-        );
-        if (merge) {
-          text = merge.value;
-        }
-      }
-      text = cleanHeaderText(text);
+      const text = filledText.get(
+        `${row}:${col}`
+      ) ?? "";
       if (!text) continue;
       if (labels.length === 0 || safeNormalize(
         labels[labels.length - 1]
@@ -50883,6 +50999,12 @@ function buildEffectiveColumnHeaders(ws, range, layout, mergedCells) {
     });
   }
   return result;
+}
+function columnHasData(ws, range, col, fromRow) {
+  for (let row = fromRow; row <= range.e.r; row++) {
+    if (getCellText(ws, row, col)) return true;
+  }
+  return false;
 }
 function cleanHeaderText(value) {
   return value.replace(/\s+/g, " ").replace(/\|+/g, " | ").trim();
@@ -51999,6 +52121,17 @@ function inferSubjectName(header) {
   }
   return canonicalizeSubjectName(parts[0]);
 }
+function inferRawSubjectName(header) {
+  const parts = splitHeaderPath(header);
+  if (parts.length === 0) return String(header ?? "").trim();
+  if (parts.length >= 3) {
+    const candidate = parts[parts.length - 2];
+    if (candidate && !isStructuralPart(candidate) && !isComponentPart(candidate)) {
+      return candidate;
+    }
+  }
+  return parts[0];
+}
 function isStructuralPart(value) {
   const normalized = normalizeHeader(value);
   return NON_SUBJECT_TERMS.some(
@@ -52078,50 +52211,129 @@ function shouldMapAsSubject(column) {
   }
   return false;
 }
+function splitHeaderPath(header) {
+  return String(header ?? "").split("|").map((part) => part.trim()).filter(Boolean);
+}
+var GRADE_SUBJECT_TERMS = [
+  "mv",
+  "gk",
+  "general knowledge",
+  "draw",
+  "drawing",
+  "art",
+  "art education",
+  "craft",
+  "crafts",
+  "music",
+  "dance",
+  "physical education",
+  "pe",
+  "sports",
+  "games",
+  "yoga",
+  "moral",
+  "moral science",
+  "value education",
+  "work education",
+  "discipline",
+  "punctuation"
+];
+function isGradeSubjectHeader(header) {
+  const normalized = normalizeHeader(header);
+  if (!normalized) return false;
+  return GRADE_SUBJECT_TERMS.some((term) => term === normalized);
+}
+function classifyOverallHeader(header) {
+  const normalized = normalizeHeader(header);
+  if (!normalized) return null;
+  if (normalized === "total" || normalized === "grand total" || normalized === "overall total" || normalized === "total marks" || normalized === "obtained marks" || normalized === "total obtained") {
+    return "total";
+  }
+  if (normalized === "percentage" || normalized === "percent" || normalized === "%" || normalized === "pc") {
+    return "percentage";
+  }
+  if (normalized === "position" || normalized === "rank" || normalized === "class rank" || normalized === "overall rank" || normalized === "standing") {
+    return "position";
+  }
+  if (normalized === "attendance" || normalized === "attendance %") {
+    return "attendance";
+  }
+  return null;
+}
 function autoMapColumns(headers) {
   const mapping = [];
   const assignedFields = /* @__PURE__ */ new Set();
-  for (const column of headers) {
+  headers.forEach((column, index) => {
     const columnName = String(column ?? "").trim();
     if (!columnName) {
       mapping.push({
         columnName,
-        fieldKey: "ignore"
+        fieldKey: "ignore",
+        excelColumn: index
       });
-      continue;
+      return;
     }
-    const coreField = findCoreField(columnName, assignedFields);
-    if (coreField) {
-      mapping.push({
-        columnName,
-        fieldKey: coreField
-      });
-      assignedFields.add(coreField);
-      continue;
-    }
-    if (isOverallOrResultColumn(columnName)) {
-      mapping.push({
-        columnName,
-        fieldKey: "ignore"
-      });
-      continue;
-    }
-    if (shouldMapAsSubject(columnName)) {
-      const normalized = normalizeHeader(columnName);
-      const subjectName = inferSubjectName(columnName);
+    const parts = splitHeaderPath(columnName);
+    if (parts.length >= 2) {
+      const subjectName = inferRawSubjectName(columnName);
+      const componentName = parts[parts.length - 1];
       mapping.push({
         columnName,
         fieldKey: "subject",
-        subjectName: subjectName || canonicalizeSubjectName(columnName),
-        maxMarks: inferMaxMarks(columnName, normalized)
+        subjectName: subjectName || parts[0],
+        componentName,
+        maxMarks: inferMaxMarks(columnName, normalizeHeader(columnName)),
+        excelColumn: index
       });
-      continue;
+      return;
+    }
+    const overall = classifyOverallHeader(columnName);
+    if (overall) {
+      mapping.push({
+        columnName,
+        fieldKey: "overallField",
+        overallFieldType: overall,
+        excelColumn: index
+      });
+      return;
+    }
+    const coreField = findCoreField(columnName, assignedFields);
+    if (coreField && coreField !== "position") {
+      mapping.push({
+        columnName,
+        fieldKey: coreField,
+        excelColumn: index
+      });
+      assignedFields.add(coreField);
+      return;
+    }
+    if (isGradeSubjectHeader(columnName)) {
+      mapping.push({
+        columnName,
+        fieldKey: "gradeField",
+        subjectName: columnName,
+        maxMarks: 0,
+        excelColumn: index
+      });
+      return;
+    }
+    if (shouldMapAsSubject(columnName)) {
+      const normalized = normalizeHeader(columnName);
+      mapping.push({
+        columnName,
+        fieldKey: "subject",
+        subjectName: inferSubjectName(columnName) || canonicalizeSubjectName(columnName),
+        maxMarks: inferMaxMarks(columnName, normalized),
+        excelColumn: index
+      });
+      return;
     }
     mapping.push({
       columnName,
-      fieldKey: "ignore"
+      fieldKey: "ignore",
+      excelColumn: index
     });
-  }
+  });
   return mapping;
 }
 
@@ -52349,14 +52561,50 @@ function buildStudentsFromRows(rows, mapping, defaults) {
       if (m.fieldKey === "subject" || m.fieldKey === "gradeField" || m.fieldKey === "overallField" || m.fieldKey === "ignore") continue;
       fields[m.fieldKey] = parseCellValue(getMappedCell(row, m));
     }
-    const subjects = subjectMappings.map((m) => {
-      const parsed = parseSubjectCell(getMappedCell(row, m));
+    const groupedSubjects = /* @__PURE__ */ new Map();
+    subjectMappings.forEach((m, index) => {
+      const rawName = (m.subjectName || m.columnName || "").trim();
+      if (!rawName) return;
+      const normalized = rawName.toLowerCase();
+      const group = groupedSubjects.get(normalized) ?? { name: rawName, entries: [] };
+      group.entries.push({ mapping: m, index });
+      groupedSubjects.set(normalized, group);
+    });
+    const subjects = [...groupedSubjects.values()].map((group) => {
+      const components = group.entries.map(({ mapping: mapping2 }) => {
+        const parsed = parseSubjectCell(getMappedCell(row, mapping2));
+        const header = String(mapping2.columnName ?? "");
+        const componentName = mapping2.componentName || deriveComponentName(header, group.name) || group.name;
+        return {
+          name: componentName,
+          marks: parsed.marks,
+          maxMarks: mapping2.maxMarks ?? 100,
+          status: parsed.status,
+          rawValue: parsed.rawValue,
+          isTotal: isTotalLikeHeader(componentName) || isTotalLikeHeader(header)
+        };
+      });
+      if (components.length === 1) {
+        return {
+          name: group.name,
+          marks: components[0].marks,
+          maxMarks: components[0].maxMarks ?? 100,
+          status: components[0].status,
+          rawValue: components[0].rawValue,
+          hasComponents: false
+        };
+      }
+      const totalComponent = components.find((component) => component.isTotal);
+      const marks = totalComponent ? totalComponent.marks : sumPresentMarks(components) ?? lastNumericMarks(components);
+      const status = totalComponent ? totalComponent.status : components.find((component) => component.status !== "present")?.status ?? "present";
+      const maxMarks = totalComponent?.maxMarks || 100;
       return {
-        name: m.subjectName || m.columnName,
-        maxMarks: m.maxMarks ?? 100,
-        ...parsed,
-        hasComponents: false,
-        components: void 0
+        name: group.name,
+        marks,
+        maxMarks,
+        status,
+        hasComponents: true,
+        components
       };
     });
     const gradeFields = gradeFieldMappings.map((m) => {
@@ -52813,8 +53061,7 @@ var DEFAULT_GRADING_BANDS = [
   { grade: "A2", min: 81, max: 90, remark: "Very Good" },
   { grade: "B1", min: 71, max: 80, remark: "Good" },
   { grade: "B2", min: 61, max: 70, remark: "Satisfactory" },
-  { grade: "C", min: 51, max: 60, remark: "Average" },
-  { grade: "D", min: 0, max: 50, remark: "Needs Improvement" }
+  { grade: "C1", min: 0, max: 60, remark: "Average" }
 ];
 var UNGRADED_LABEL = "\u2014";
 function normalizeGradingBands(bands) {
@@ -52865,6 +53112,21 @@ function bandsLegend(bands) {
     const rounded = Number.isInteger(upper) ? upper : Math.round(upper * 10) / 10;
     return `${b.grade} (${b.min}-${rounded})`;
   }).join("    ");
+}
+function capGradeLabel(value, bands) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (/^\d/.test(raw)) return raw;
+  const scale = normalizeGradingBands(bands);
+  const floor = scale[scale.length - 1]?.grade;
+  if (!floor) return raw;
+  const upper = raw.toUpperCase();
+  if (upper === floor.toUpperCase()) return raw;
+  if (scale.some((band) => band.grade.toUpperCase() === upper)) return raw;
+  const pct = percentFromGradeLabel(raw);
+  if (pct === null) return raw;
+  const mapped = gradeFromPercent(pct, scale);
+  return mapped === floor ? floor : raw;
 }
 function percentFromGradeLabel(value) {
   const raw = String(value ?? "").trim();
@@ -53449,6 +53711,7 @@ function buildRemarkContext(student, bands) {
 }
 
 // src/services/reportCardModel.ts
+var ACADEMIC_TOTAL_KEY = "__total";
 var DEFAULT_LEARNING = [
   "Understanding",
   "Application",
@@ -53474,6 +53737,98 @@ var DEFAULT_CO_SCHOLASTIC = [
 function resolveBands(school) {
   return normalizeGradingBands(school.gradingBands ?? DEFAULT_GRADING_BANDS);
 }
+function hashString3(value) {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+function componentKey(name) {
+  return String(name ?? "").replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/gi, " ").trim().toLowerCase();
+}
+function componentLabel(name) {
+  const cleaned = String(name ?? "").replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned || String(name ?? "").trim();
+}
+function componentCell(component) {
+  if (component.status !== "present") return statusLabel(component.status);
+  if (component.marks === null || component.marks === void 0) return "\u2014";
+  return String(component.marks);
+}
+var HOLISTIC_AREAS = [
+  { name: "Regularity & Punctuality", evidence: ["punctual", "regularity", "regular", "attendance"], offset: 0 },
+  { name: "Behaviour & Values", evidence: ["behaviour", "behavior", "conduct", "discipline", "value", "moral"], offset: -2 },
+  { name: "Art & Craft", evidence: ["art", "craft", "drawing", "draw", "painting", "creative"], offset: 2 },
+  { name: "Health & Physical Education", evidence: ["physical education", "physical", "health", "sports", "yoga", "games", "pe"], offset: -1 }
+];
+function toPercent(value) {
+  if (value === null || value === void 0) return null;
+  const text = String(value).replace(/[^0-9.\-]/g, "").trim();
+  if (!text) return null;
+  const num = Number(text);
+  return Number.isFinite(num) ? num : null;
+}
+function buildHolisticDevelopment(student, subjects, gradeFields, overallPct, bands) {
+  const attendancePct = toPercent(student.attendance);
+  const nameSeed = hashString3(`${student.name}|${student.rollNo}|${student.admissionNo ?? ""}`);
+  const matchesArea = (label, area) => {
+    const norm = label.toLowerCase().replace(/[^a-z ]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!norm) return false;
+    return area.evidence.some(
+      (word) => word.includes(" ") ? norm.includes(word) : new RegExp(`\\b${word}\\b`).test(norm)
+    );
+  };
+  const rawPcts = HOLISTIC_AREAS.map((area, areaIndex) => {
+    let pct = null;
+    if (area.name.startsWith("Regularity")) {
+      pct = attendancePct;
+    }
+    if (pct === null) {
+      const field = gradeFields.find((f) => matchesArea(f.name, area));
+      if (field) pct = percentFromGradeLabel(field.value);
+    }
+    if (pct === null) {
+      const subject = subjects.find(
+        (s) => s.maxMarks > 0 && s.status === "present" && s.percentage !== null && matchesArea(s.name, area)
+      );
+      if (subject) pct = subject.percentage;
+    }
+    if (pct === null && overallPct !== null) {
+      const jitter = hashString3(`${nameSeed}#${areaIndex}`) % 5 - 2;
+      pct = overallPct + area.offset + jitter;
+    }
+    return pct === null ? null : Math.max(0, Math.min(100, pct));
+  });
+  const bandIndexFor = (pct) => {
+    for (let i = 0; i < bands.length; i++) {
+      if (pct >= bands[i].min && pct <= bands[i].max) return i;
+    }
+    return bands.length - 1;
+  };
+  const order = rawPcts.map((pct, index) => ({ index, pct: pct ?? -1 })).sort((a, b) => b.pct - a.pct);
+  const withData = order.filter((entry) => entry.pct >= 0);
+  const assignedBand = new Array(HOLISTIC_AREAS.length).fill(-1);
+  if (withData.length > 0) {
+    const base = Math.max(
+      0,
+      Math.min(bandIndexFor(withData[0].pct), bands.length - withData.length)
+    );
+    withData.forEach((entry, rank) => {
+      assignedBand[entry.index] = Math.min(bands.length - 1, base + rank);
+    });
+  }
+  return HOLISTIC_AREAS.map((area, i) => {
+    const hasData = rawPcts[i] !== null;
+    const band = assignedBand[i];
+    return {
+      name: area.name,
+      value: hasData && band >= 0 ? bands[band].grade : "",
+      source: hasData ? "computed" : "none"
+    };
+  });
+}
 function resolveAssessmentConfig(school) {
   const configured = school.assessmentConfig;
   return { ...DEFAULT_ASSESSMENT_CONFIG, ...configured ?? {} };
@@ -53488,7 +53843,8 @@ function buildSkillRows(excelValues, defaultNames, profile, bands, config) {
     else computed++;
     return {
       name: rating.name,
-      value: rating.value ?? value,
+      /* Grades supplied by the workbook are clamped to the C1 floor. */
+      value: capGradeLabel(rating.value ?? value, bands),
       stars: rating.stars,
       source: rating.source
     };
@@ -53510,26 +53866,60 @@ function buildReportCardModel(student, school) {
   const assessmentConfig = resolveAssessmentConfig(school);
   const totals = computeTotals(student, { bands });
   const profile = buildPerformanceProfile(student, bands);
+  const academicColumns = [];
+  const seenColumns = /* @__PURE__ */ new Set();
+  let totalLabel = "Total";
+  for (const summary of totals.gradedSubjects) {
+    if (summary.maxMarks === 0) continue;
+    for (const component of summary.components ?? []) {
+      if (component.isTotal) {
+        const label = componentLabel(component.name);
+        if (label) totalLabel = label;
+        continue;
+      }
+      const key = componentKey(component.name);
+      if (!key || seenColumns.has(key)) continue;
+      if (/^(grade|grades|result|remark|remarks)$/.test(key)) continue;
+      seenColumns.add(key);
+      academicColumns.push({ key, label: componentLabel(component.name) || component.name });
+    }
+  }
+  academicColumns.push({ key: ACADEMIC_TOTAL_KEY, label: totalLabel });
+  const markCell = (summary) => summary.status === "present" ? summary.marks !== null ? summary.marks : "\u2014" : summary.status.toUpperCase();
   const academic = [];
   totals.gradedSubjects.forEach((summary, index) => {
     if (summary.maxMarks === 0) return;
+    const componentCells = /* @__PURE__ */ new Map();
+    for (const component of summary.components ?? []) {
+      if (component.isTotal) continue;
+      const key = componentKey(component.name);
+      if (!key) continue;
+      componentCells.set(key, componentCell(component));
+    }
     academic.push({
       name: summary.name,
       maxMarks: summary.maxMarks || "\u2014",
-      marks: summary.status === "present" ? summary.marks !== null ? summary.marks : "\u2014" : summary.status.toUpperCase(),
-      grade: summary.grade,
+      marks: markCell(summary),
+      grade: capGradeLabel(summary.grade, bands),
       remark: summary.remark,
       subjectIndex: index,
-      gradeFromExcel: summary.gradeFromExcel
+      gradeFromExcel: summary.gradeFromExcel,
+      cells: academicColumns.map(
+        (column) => column.key === ACADEMIC_TOTAL_KEY ? String(markCell(summary)) : componentCells.get(column.key) ?? "\u2014"
+      )
     });
   });
+  const grandTotalCell = totals.totalMax > 0 ? `${totals.totalMarks} / ${totals.totalMax}` : String(totals.totalMarks);
   academic.push({
     name: "GRAND TOTAL",
     maxMarks: totals.totalMax || "\u2014",
     marks: totals.totalMarks,
     grade: totals.percentage !== null ? totals.overallGrade : "\u2014",
     remark: remarkFromPercent(totals.percentage, bands),
-    isGrandTotal: true
+    isGrandTotal: true,
+    cells: academicColumns.map(
+      (column) => column.key === ACADEMIC_TOTAL_KEY ? grandTotalCell : "\u2014"
+    )
   });
   const classSection = [student.class, student.section].filter((part) => part && String(part).trim()).join(" - ");
   const coScholasticExcel = coScholasticGradeFields(student);
@@ -53555,6 +53945,14 @@ function buildReportCardModel(student, school) {
     profile,
     bands,
     assessmentConfig
+  );
+  const academicSummaries = totals.gradedSubjects.filter((s) => s.maxMarks > 0);
+  const holisticDevelopment = buildHolisticDevelopment(
+    student,
+    academicSummaries,
+    coScholasticExcel,
+    totals.percentage,
+    bands
   );
   const remarkContext = buildRemarkContext(student, bands);
   const teacherFromExcel = String(student.teacherRemarks ?? "").trim();
@@ -53586,15 +53984,16 @@ function buildReportCardModel(student, school) {
     infoRight: [
       { label: "Date of Birth", value: student.dob || "" },
       { label: "Admission No.", value: student.admissionNo || "" },
-      { label: "Attendance", value: student.attendance || "" },
       { label: "Examination", value: school.examTerm || "" },
       { label: "Date of Issue", value: school.dateOfIssue || "" }
     ],
+    academicColumns,
     academic,
     gradeScale: (school.gradingScale || "").trim() || bandsLegend(bands),
     coScholastic: coScholastic.rows,
     personality: personality.rows,
     learning: learning.rows,
+    holisticDevelopment,
     attendance: {
       workingDays: student.workingDays || "",
       present: student.daysPresent || "",
@@ -53632,7 +54031,12 @@ var CONTENT_W_MM = A4_W_MM - MARGIN_MM * 2;
 var LEFT_W_MM = 122;
 var BODY_GAP_MM = 4;
 var RIGHT_W_MM = CONTENT_W_MM - LEFT_W_MM - BODY_GAP_MM;
-var ACADEMIC_COL_RATIOS = [0.34, 0.14, 0.17, 0.11, 0.24];
+function academicColumnRatios(dataColumnCount) {
+  const columns = Math.max(1, dataColumnCount);
+  const subject = Math.min(0.62, Math.max(0.24, 0.62 - 0.055 * columns));
+  const rest = (1 - subject) / columns;
+  return [subject, ...new Array(columns).fill(rest)];
+}
 var TITLE_BAR_H = 7;
 var SECTION_BAR_H = 7;
 var SKILLS_BAR_H = 6.5;
@@ -53649,25 +54053,73 @@ var SESSION_VALUE_H_MM = 9;
 var OVERALL_MIN_H_MM = 19.5;
 var SKILL_BOX_W_MM = (LEFT_W_MM - SKILLS_GAP_MM) / 2;
 
+// src/themes/typography.ts
+var PT_PER_MM = 72 / 25.4;
+var mmCss = (mm) => `${Math.round(mm * 1e3) / 1e3}mm`;
+var TYPE_MM = {
+  /** Academic table: subject names, component cells and column headers. */
+  academic: 3.05,
+  /** The title/section bars ("ACADEMIC PERFORMANCE", "OVERALL PERFORMANCE", …). */
+  sectionBar: 3.05,
+  /** Co-scholastic area names and their grade values. */
+  coScholastic: 3.05,
+  /** Holistic Development Profile area names and grade values. */
+  holisticValue: 3.05,
+  /** Personality Development / Learning Skills rows. */
+  skills: 2.95,
+  /** Student information grid (Date of Birth, Admission No., …). */
+  info: 3.25,
+  /** The card title bar ("ANNUAL REPORT CARD"). */
+  title: 3.9,
+  /** Summary strip labels ("MARKS OBTAINED", "PERCENTAGE" …). */
+  summaryLabel: 2.7,
+  /** Summary strip values (big numbers under those labels). */
+  summaryValue: 5.3,
+  /** The big performance word inside the Overall panel ("GOOD"). */
+  overallValue: 5.1,
+  /** "Overall Percentage: 76%". */
+  overallLabel: 3.05,
+  /** The grading-scale legend under the academic table. */
+  gradingScale: 2.7,
+  /** Teacher's / Principal's remarks body text. */
+  remarks: 2.95,
+  /** "TEACHER'S REMARKS" / "PRINCIPAL'S REMARKS" labels. */
+  remarksLabel: 3.05,
+  /** Signature name and role labels. */
+  signatureName: 3,
+  /** Page footer note. */
+  footer: 2.55
+};
+var DENSITY_SCALE = {
+  /** Up to 10 academic rows. */
+  normal: 1,
+  /** 11–17 rows. */
+  compact: 0.92,
+  /** 18+ rows. */
+  ultra: 0.84
+};
+function densityTierFor(rows) {
+  if (rows >= 18) return "ultra";
+  if (rows >= 11) return "compact";
+  return "normal";
+}
+
 // src/components/report/HolisticReportPreview.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
+function font(tokens, baseMm) {
+  return mmCss(baseMm * tokens.scale);
+}
 var DENSITY = {
   normal: {
+    scale: DENSITY_SCALE.normal,
     sectionGap: "mt-[2mm]",
-    sectionTitle: "text-[11px]",
-    acadFont: "text-[10.5px]",
     acadPad: "py-[1.4mm]",
     acadHeadPad: "py-[1.6mm]",
-    coFont: "text-[10.5px]",
     coPad: "py-[1.5mm]",
-    skillTitle: "text-[10px]",
-    skillFont: "text-[10px]",
     skillPad: "py-[1.2mm]",
     attPad: "py-[1.5mm]",
-    infoFont: "text-[11px]",
     infoGap: "gap-y-[1mm]",
     infoPad: "p-[2mm]",
-    remarkFont: "text-[10px]",
     remarkPad: "p-[2mm]",
     remarkMinH: "min-h-[9mm]",
     sigGap: "mt-[4mm]",
@@ -53676,21 +54128,15 @@ var DENSITY = {
     sigStamp: "h-[16mm]"
   },
   compact: {
+    scale: DENSITY_SCALE.compact,
     sectionGap: "mt-[1.6mm]",
-    sectionTitle: "text-[10px]",
-    acadFont: "text-[9.5px]",
-    acadPad: "py-[0.9mm]",
+    acadPad: "py-[1mm]",
     acadHeadPad: "py-[1.1mm]",
-    coFont: "text-[9.5px]",
     coPad: "py-[1mm]",
-    skillTitle: "text-[9.5px]",
-    skillFont: "text-[9.5px]",
     skillPad: "py-[0.8mm]",
     attPad: "py-[1mm]",
-    infoFont: "text-[10px]",
     infoGap: "gap-y-[0.6mm]",
     infoPad: "p-[1.5mm]",
-    remarkFont: "text-[9.5px]",
     remarkPad: "p-[1.5mm]",
     remarkMinH: "min-h-[8mm]",
     sigGap: "mt-[3mm]",
@@ -53699,21 +54145,15 @@ var DENSITY = {
     sigStamp: "h-[14mm]"
   },
   ultra: {
+    scale: DENSITY_SCALE.ultra,
     sectionGap: "mt-[1.2mm]",
-    sectionTitle: "text-[9.5px]",
-    acadFont: "text-[8.5px]",
-    acadPad: "py-[0.5mm]",
+    acadPad: "py-[0.6mm]",
     acadHeadPad: "py-[0.8mm]",
-    coFont: "text-[8.5px]",
     coPad: "py-[0.6mm]",
-    skillTitle: "text-[9px]",
-    skillFont: "text-[8.5px]",
     skillPad: "py-[0.5mm]",
     attPad: "py-[0.6mm]",
-    infoFont: "text-[9.5px]",
     infoGap: "gap-y-[0.4mm]",
     infoPad: "p-[1mm]",
-    remarkFont: "text-[9px]",
     remarkPad: "p-[1mm]",
     remarkMinH: "min-h-[6mm]",
     sigGap: "mt-[2mm]",
@@ -53723,9 +54163,7 @@ var DENSITY = {
   }
 };
 function pickDensity(rows) {
-  if (rows >= 18) return DENSITY.ultra;
-  if (rows >= 11) return DENSITY.compact;
-  return DENSITY.normal;
+  return DENSITY[densityTierFor(rows)];
 }
 function SectionBar({
   children,
@@ -53739,9 +54177,10 @@ function SectionBar({
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
     "div",
     {
-      className: `w-full flex items-center justify-center text-center font-bold uppercase rc-wrap ${tokens.sectionTitle} ${className}`,
+      className: `w-full flex items-center justify-center text-center font-bold uppercase rc-wrap ${className}`,
       style: {
         height: `${heightMm}mm`,
+        fontSize: font(tokens, TYPE_MM.sectionBar),
         backgroundColor: background,
         color,
         border: border ? `1px solid ${border}` : void 0,
@@ -53937,16 +54376,21 @@ function HolisticReportPreview({ student, school, photoDataUrl, theme }) {
                   "table",
                   {
                     "data-rc-section": "academic",
-                    className: `w-full border-collapse table-fixed ${d.acadFont}`,
-                    style: { flex: "1 1 auto" },
+                    className: "w-full border-collapse table-fixed",
+                    style: { flex: "1 1 auto", fontSize: font(d, TYPE_MM.academic) },
                     children: [
-                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("colgroup", { children: ACADEMIC_COL_RATIOS.map((ratio, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", { style: { width: `${ratio * 100}%` } }, i)) }),
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("colgroup", { children: academicColumnRatios(model.academicColumns.length).map((ratio, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", { style: { width: `${ratio * 100}%` } }, i)) }),
                       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { style: { backgroundColor: "#f8fafc" }, className: "text-ink-800", children: [
-                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { className: `border ${d.acadHeadPad} px-1.5 text-left font-semibold rc-wrap`, style: { borderColor: p.line }, children: "Subjects" }),
-                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { className: `border ${d.acadHeadPad} px-1 font-semibold rc-wrap`, style: { borderColor: p.line }, children: "Max. Marks" }),
-                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { className: `border ${d.acadHeadPad} px-1 font-semibold rc-wrap`, style: { borderColor: p.line }, children: "Marks Obtained" }),
-                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { className: `border ${d.acadHeadPad} px-1 font-semibold rc-wrap`, style: { borderColor: p.line }, children: "Grade" }),
-                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { className: `border ${d.acadHeadPad} px-1.5 text-left font-semibold rc-wrap`, style: { borderColor: p.line }, children: "Remarks" })
+                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { className: `border ${d.acadHeadPad} px-1.5 text-left font-semibold uppercase rc-wrap`, style: { borderColor: p.line }, children: "Subjects" }),
+                        model.academicColumns.map((column, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                          "th",
+                          {
+                            className: `border ${d.acadHeadPad} px-0.5 font-semibold uppercase rc-wrap`,
+                            style: { borderColor: p.line },
+                            children: column.label
+                          },
+                          i
+                        ))
                       ] }) }),
                       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: model.academic.map((row, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
                         "tr",
@@ -53955,10 +54399,15 @@ function HolisticReportPreview({ student, school, photoDataUrl, theme }) {
                           style: row.isGrandTotal ? { backgroundColor: p.totalFill } : void 0,
                           children: [
                             /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: `border px-1.5 ${d.acadPad} align-middle rc-wrap`, style: { borderColor: p.line }, children: row.name }),
-                            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: `border px-1 ${d.acadPad} text-center align-middle rc-wrap`, style: { borderColor: p.line }, children: row.maxMarks }),
-                            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: `border px-1 ${d.acadPad} text-center align-middle rc-wrap`, style: { borderColor: p.line }, children: row.marks }),
-                            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: `border px-1 ${d.acadPad} text-center align-middle rc-wrap`, style: { borderColor: p.line }, children: row.grade }),
-                            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: `border px-1.5 ${d.acadPad} align-middle rc-wrap`, style: { borderColor: p.line }, children: row.remark })
+                            row.cells.map((cell, j) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                              "td",
+                              {
+                                className: `border px-0.5 ${d.acadPad} text-center align-middle rc-wrap`,
+                                style: { borderColor: p.line },
+                                children: cell
+                              },
+                              j
+                            ))
                           ]
                         },
                         i
@@ -53966,11 +54415,18 @@ function HolisticReportPreview({ student, school, photoDataUrl, theme }) {
                     ]
                   }
                 ),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-[1.4mm] text-[8.5px] text-ink-700 rc-wrap", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "font-bold uppercase", children: "Grading Scale:" }),
-                  " ",
-                  model.gradeScale
-                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+                  "div",
+                  {
+                    className: "mt-[1.4mm] text-ink-700 rc-wrap",
+                    style: { fontSize: font(d, TYPE_MM.gradingScale) },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "font-bold uppercase", children: "Grading Scale:" }),
+                      " ",
+                      model.gradeScale
+                    ]
+                  }
+                ),
                 /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
                   "div",
                   {
@@ -54015,35 +54471,43 @@ function HolisticReportPreview({ student, school, photoDataUrl, theme }) {
                     children: "Co-scholastic Areas (Grades)"
                   }
                 ),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", { "data-rc-section": "co", className: `w-full border-collapse table-fixed ${d.coFont}`, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("colgroup", { children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", {}),
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", { style: { width: `${CO_VALUE_W_MM}mm` } })
-                  ] }),
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: model.coScholastic.map((row, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-                      "td",
-                      {
-                        className: `border px-1.5 ${d.coPad} uppercase align-middle rc-wrap`,
-                        style: { borderColor: p.line },
-                        children: row.name
-                      }
-                    ),
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-                      "td",
-                      {
-                        className: `border px-1 ${d.coPad} text-center font-semibold align-middle rc-wrap`,
-                        style: { borderColor: p.line },
-                        children: row.value || "\u2014"
-                      }
-                    )
-                  ] }, i)) })
-                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+                  "table",
+                  {
+                    "data-rc-section": "co",
+                    className: "w-full border-collapse table-fixed",
+                    style: { fontSize: font(d, TYPE_MM.coScholastic) },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("colgroup", { children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", {}),
+                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", { style: { width: `${CO_VALUE_W_MM}mm` } })
+                      ] }),
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: model.coScholastic.map((row, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                          "td",
+                          {
+                            className: `border px-1.5 ${d.coPad} uppercase align-middle rc-wrap`,
+                            style: { borderColor: p.line },
+                            children: row.name
+                          }
+                        ),
+                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                          "td",
+                          {
+                            className: `border px-1 ${d.coPad} text-center font-semibold align-middle rc-wrap`,
+                            style: { borderColor: p.line },
+                            children: row.value || "\u2014"
+                          }
+                        )
+                      ] }, i)) })
+                    ]
+                  }
+                ),
                 /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { "aria-hidden": true, style: { flex: "1 1 0%", minHeight: 6, maxHeight: "12mm" } }),
                 /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
                   "div",
                   {
-                    "data-rc-section": "attendance",
+                    "data-rc-section": "holistic-development",
                     className: "rounded-sm overflow-hidden",
                     style: { border: `1px solid ${p.line}` },
                     children: [
@@ -54051,18 +54515,44 @@ function HolisticReportPreview({ student, school, photoDataUrl, theme }) {
                         SectionBar,
                         {
                           heightMm: ATTENDANCE_BAR_H,
-                          background: p.headerFill,
+                          background: p.coScholasticFill,
                           border: p.line,
                           tokens: d,
                           className: "!border-0",
-                          children: "Attendance"
+                          children: "Holistic Development Profile"
                         }
                       ),
-                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("table", { className: `w-full table-fixed ${d.coFont}`, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tbody", { children: [
-                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AttRow, { label: "Total Working Days", value: model.attendance.workingDays, pad: d.attPad, line: p.line }),
-                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AttRow, { label: "Days Present", value: model.attendance.present, pad: d.attPad, line: p.line }),
-                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AttRow, { label: "Attendance %", value: model.attendance.percentage, pad: d.attPad, line: p.line })
-                      ] }) })
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+                        "table",
+                        {
+                          className: "w-full table-fixed border-collapse",
+                          style: { fontSize: font(d, TYPE_MM.holisticValue) },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("colgroup", { children: [
+                              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", {}),
+                              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", { style: { width: `${CO_VALUE_W_MM}mm` } })
+                            ] }),
+                            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: model.holisticDevelopment.map((row, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
+                              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                                "td",
+                                {
+                                  className: `border px-1.5 ${d.coPad} align-middle rc-wrap`,
+                                  style: { borderColor: p.line },
+                                  children: row.name
+                                }
+                              ),
+                              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                                "td",
+                                {
+                                  className: `border px-1 ${d.coPad} text-center font-semibold align-middle rc-wrap`,
+                                  style: { borderColor: p.line },
+                                  children: row.value || "\u2014"
+                                }
+                              )
+                            ] }, i)) })
+                          ]
+                        }
+                      )
                     ]
                   }
                 ),
@@ -54088,12 +54578,19 @@ function HolisticReportPreview({ student, school, photoDataUrl, theme }) {
                           children: "Overall Performance"
                         }
                       ),
-                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
                         "div",
                         {
-                          className: "flex-1 flex items-center justify-center text-center py-2 text-[16px] font-extrabold rc-wrap",
+                          className: "flex-1 flex flex-col items-center justify-center text-center py-2 gap-1",
                           style: { backgroundColor: p.overallSoft, color: p.overall },
-                          children: model.overallPerformance
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "font-extrabold rc-wrap", style: { fontSize: font(d, TYPE_MM.overallValue) }, children: model.overallPerformance }),
+                            model.totals.percentage !== null && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "font-bold rc-wrap", style: { fontSize: font(d, TYPE_MM.overallLabel) }, children: [
+                              "Overall Percentage: ",
+                              model.totals.percentage,
+                              "%"
+                            ] })
+                          ]
                         }
                       )
                     ]
@@ -54107,8 +54604,8 @@ function HolisticReportPreview({ student, school, photoDataUrl, theme }) {
           "div",
           {
             "data-rc-section": "remarks",
-            className: `${d.sectionGap} grid grid-cols-2 rounded-sm ${d.remarkPad} ${d.remarkFont} items-start`,
-            style: { border: `1px solid ${p.line}`, columnGap: "4mm" },
+            className: `${d.sectionGap} grid grid-cols-2 rounded-sm ${d.remarkPad} items-start`,
+            style: { border: `1px solid ${p.line}`, columnGap: "4mm", fontSize: font(d, TYPE_MM.remarks) },
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "min-w-0", children: [
                 /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "font-bold uppercase mb-1", children: "Teacher\u2019s Remarks" }),
@@ -54121,42 +54618,49 @@ function HolisticReportPreview({ student, school, photoDataUrl, theme }) {
             ]
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: `${d.sigGap} grid grid-cols-3 gap-2 text-[10px]`, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-            SignBlock,
-            {
-              label: "Class Teacher",
-              name: model.signatures.teacherName,
-              image: school.teacherSignDataUrl,
-              tokens: d
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-            SignBlock,
-            {
-              label: "Checked by (Vice Principal)",
-              name: model.signatures.checkedByName,
-              image: school.checkedBySignDataUrl,
-              tokens: d
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-            SignBlock,
-            {
-              label: "Principal",
-              name: model.signatures.principalName,
-              image: school.principalSignDataUrl,
-              stamp: school.stampDataUrl,
-              tokens: d
-            }
-          )
-        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+          "div",
+          {
+            className: `${d.sigGap} grid grid-cols-3 gap-2`,
+            style: { fontSize: font(d, TYPE_MM.signatureName) },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                SignBlock,
+                {
+                  label: "Class Teacher",
+                  name: model.signatures.teacherName,
+                  image: school.teacherSignDataUrl,
+                  tokens: d
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                SignBlock,
+                {
+                  label: "Checked by (Vice Principal)",
+                  name: model.signatures.checkedByName,
+                  image: school.checkedBySignDataUrl,
+                  tokens: d
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                SignBlock,
+                {
+                  label: "Principal",
+                  name: model.signatures.principalName,
+                  image: school.principalSignDataUrl,
+                  stamp: school.stampDataUrl,
+                  tokens: d
+                }
+              )
+            ]
+          }
+        ),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
           "div",
           {
             "data-rc-section": "footer-note",
-            className: `${d.sectionGap} rounded-sm text-center text-[8px] text-ink-600 py-1 rc-wrap`,
-            style: { border: `1px solid ${p.line}` },
+            className: `${d.sectionGap} rounded-sm text-center text-ink-600 py-1 rc-wrap`,
+            style: { border: `1px solid ${p.line}`, fontSize: font(d, TYPE_MM.footer) },
             children: "This Report Card reflects the holistic development of the child and is a shared responsibility of the school and parents."
           }
         )
@@ -54165,10 +54669,18 @@ function HolisticReportPreview({ student, school, photoDataUrl, theme }) {
   );
 }
 function InfoColumn({ items, tokens }) {
+  const infoFont = { fontSize: font(tokens, TYPE_MM.info) };
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: `min-w-0 ${tokens.infoGap} flex flex-col`, children: items.map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex gap-1 min-w-0 items-start", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `font-semibold text-ink-700 w-[30mm] shrink-0 rc-wrap ${tokens.infoFont}`, children: item.label }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `text-ink-500 shrink-0 ${tokens.infoFont}`, children: ":" }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `flex-1 min-w-0 whitespace-normal rc-wrap text-ink-900 ${tokens.infoFont}`, children: item.value || "\u2014" })
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      "span",
+      {
+        className: "font-semibold text-ink-700 w-[30mm] shrink-0 rc-wrap",
+        style: infoFont,
+        children: item.label
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-ink-500 shrink-0", style: infoFont, children: ":" }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "flex-1 min-w-0 whitespace-normal rc-wrap text-ink-900", style: infoFont, children: item.value || "\u2014" })
   ] }, i)) });
 }
 function SkillTable({
@@ -54181,7 +54693,7 @@ function SkillTable({
 }) {
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "rounded-sm overflow-hidden min-w-0", style: { border: `1px solid ${theme.palette.line}` }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionBar, { heightMm: SKILLS_BAR_H, background: headerFill, tokens, className: "!border-0", children: title }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", { className: `w-full table-fixed ${tokens.skillFont}`, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", { className: "w-full table-fixed", style: { fontSize: font(tokens, TYPE_MM.skills) }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("colgroup", { children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", { style: { width: "60%" } }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("col", { style: { width: "40%" } })
@@ -54191,17 +54703,6 @@ function SkillTable({
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: `px-1 ${tokens.skillPad} text-center whitespace-nowrap`, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Stars, { value: row.stars ?? 0, max: maxStars, theme }) })
       ] }, i)) })
     ] })
-  ] });
-}
-function AttRow({
-  label,
-  value,
-  pad,
-  line
-}) {
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { className: "border-b border-slate-100 last:border-0", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: `px-1.5 ${pad} text-ink-700 align-middle rc-wrap`, style: { borderRight: `1px solid ${line}` }, children: label }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { className: `px-1.5 ${pad} text-right font-semibold align-middle rc-wrap`, children: value || "\u2014" })
   ] });
 }
 function SignBlock({
@@ -54218,7 +54719,14 @@ function SignBlock({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "border-t border-slate-400 mt-0.5 pt-0.5", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "font-semibold text-ink-900 rc-wrap", children: name || "" }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "text-[8.5px] font-bold uppercase tracking-wide text-ink-600 rc-wrap", children: label })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "div",
+        {
+          className: "font-bold uppercase tracking-wide text-ink-600 rc-wrap",
+          style: { fontSize: font(tokens, TYPE_MM.footer) },
+          children: label
+        }
+      )
     ] })
   ] });
 }
@@ -54232,6 +54740,9 @@ function AcademicReportPreview({ student, school, photoDataUrl, theme }) {
   const { header } = model;
   const { sections } = activeTheme;
   const modern = activeTheme.variant === "modern";
+  const dataCols = model.academicColumns.length + (sections.subjectPercentage ? 1 : 0);
+  const subjectColWidth = Math.min(34, Math.max(18, 36 - dataCols * 2));
+  const dataColWidth = (100 - subjectColWidth) / Math.max(1, dataCols);
   const affiliationLine = [
     header.affiliationText,
     header.schoolCode ? `SCHOOL CODE: ${header.schoolCode}` : "",
@@ -54307,8 +54818,8 @@ function AcademicReportPreview({ student, school, photoDataUrl, theme }) {
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
                 "div",
                 {
-                  className: "px-3 py-1 text-[14px] font-bold tracking-wide uppercase rc-wrap",
-                  style: { color: p.primary },
+                  className: "px-3 py-1 font-bold tracking-wide uppercase rc-wrap",
+                  style: { color: p.primary, fontSize: mmCss(TYPE_MM.title) },
                   children: model.title
                 }
               )
@@ -54317,8 +54828,8 @@ function AcademicReportPreview({ student, school, photoDataUrl, theme }) {
         ) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
           "div",
           {
-            className: "mt-3 rounded-sm text-white text-center text-[14px] py-1 font-bold tracking-wide uppercase rc-wrap",
-            style: { backgroundColor: p.primary },
+            className: "mt-3 rounded-sm text-white text-center py-1 font-bold tracking-wide uppercase rc-wrap",
+            style: { backgroundColor: p.primary, fontSize: mmCss(TYPE_MM.title) },
             children: model.title
           }
         ),
@@ -54337,94 +54848,94 @@ function AcademicReportPreview({ student, school, photoDataUrl, theme }) {
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "div",
             {
-              className: `${modern ? "text-left px-2" : "text-center"} text-[11px] py-1 font-bold uppercase rc-wrap`,
+              className: `${modern ? "text-left px-2" : "text-center"} py-1 font-bold uppercase rc-wrap`,
               style: {
                 backgroundColor: p.headerFill,
                 border: `1px solid ${modern ? p.headerFill : p.line}`,
                 color: modern ? p.primary : void 0,
-                borderRadius: modern ? "3px" : void 0
+                borderRadius: modern ? "3px" : void 0,
+                fontSize: mmCss(TYPE_MM.sectionBar)
               },
               children: "Academic Performance"
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { className: `w-full border-collapse table-fixed text-[10.5px] ${modern ? "mt-1" : ""}`, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("colgroup", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("col", { style: { width: modern ? "30%" : "26%" } }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("col", { style: { width: "12%" } }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("col", { style: { width: "15%" } }),
-              sections.subjectPercentage && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("col", { style: { width: "16%" } }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("col", { style: { width: "10%" } }),
-              sections.subjectRemarks && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("col", {})
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
-              "tr",
-              {
-                style: {
-                  backgroundColor: modern ? p.primary : "#f8fafc",
-                  color: modern ? "#ffffff" : void 0
-                },
-                children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Th, { theme: activeTheme, modern, className: "text-left", children: "Subject" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Th, { theme: activeTheme, modern, children: "Max. Marks" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Th, { theme: activeTheme, modern, children: "Marks Obtained" }),
-                  sections.subjectPercentage && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Th, { theme: activeTheme, modern, children: "Percentage" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Th, { theme: activeTheme, modern, children: "Grade" }),
-                  sections.subjectRemarks && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Th, { theme: activeTheme, modern, className: "text-left", children: "Remarks" })
-                ]
-              }
-            ) }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: model.academic.map((row, i) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
-              "tr",
-              {
-                className: row.isGrandTotal ? "font-semibold" : "",
-                style: row.isGrandTotal ? { backgroundColor: modern ? p.primary : p.totalFill, color: modern ? "#ffffff" : void 0 } : modern && i % 2 === 1 ? { backgroundColor: p.headerFill } : void 0,
-                children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Td, { theme: activeTheme, modern, className: "text-left px-1.5", children: row.name }),
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Td, { theme: activeTheme, modern, className: "px-1 text-center", children: row.maxMarks }),
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-                    Td,
-                    {
-                      theme: activeTheme,
-                      modern,
-                      className: "px-1 text-center",
-                      style: modern && !row.isGrandTotal ? { color: p.primary, fontWeight: 600 } : void 0,
-                      children: row.marks
-                    }
-                  ),
-                  sections.subjectPercentage && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-                    "td",
-                    {
-                      className: `${modern ? "border-0 px-2" : "border"} py-1 align-middle`,
-                      style: { borderColor: p.line },
-                      children: modern ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "flex flex-col items-center gap-[2px]", children: [
-                        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "text-[10px] font-semibold", style: { color: p.primary }, children: subjectPercentage(row) }),
-                        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-                          "span",
-                          {
-                            className: "block h-[3px] w-full rounded-full overflow-hidden",
-                            style: { backgroundColor: p.line },
-                            children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+            "table",
+            {
+              className: `w-full border-collapse table-fixed ${modern ? "mt-1" : ""}`,
+              style: { fontSize: mmCss(TYPE_MM.academic) },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("colgroup", { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("col", { style: { width: `${subjectColWidth}%` } }),
+                  model.academicColumns.map((_column, i) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("col", { style: { width: `${dataColWidth}%` } }, i)),
+                  sections.subjectPercentage && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("col", { style: { width: `${dataColWidth}%` } })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+                  "tr",
+                  {
+                    style: {
+                      backgroundColor: modern ? p.primary : "#f8fafc",
+                      color: modern ? "#ffffff" : void 0
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Th, { theme: activeTheme, modern, className: "text-left", children: "Subject" }),
+                      model.academicColumns.map((column, i) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Th, { theme: activeTheme, modern, className: "uppercase", children: column.label }, i)),
+                      sections.subjectPercentage && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Th, { theme: activeTheme, modern, children: "Percentage" })
+                    ]
+                  }
+                ) }),
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: model.academic.map((row, i) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+                  "tr",
+                  {
+                    className: row.isGrandTotal ? "font-semibold" : "",
+                    style: row.isGrandTotal ? { backgroundColor: modern ? p.primary : p.totalFill, color: modern ? "#ffffff" : void 0 } : modern && i % 2 === 1 ? { backgroundColor: p.headerFill } : void 0,
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Td, { theme: activeTheme, modern, className: "text-left px-1.5", children: row.name }),
+                      row.cells.map((cell, j) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+                        Td,
+                        {
+                          theme: activeTheme,
+                          modern,
+                          className: "px-1 text-center",
+                          style: modern && !row.isGrandTotal ? { color: p.primary, fontWeight: 600 } : void 0,
+                          children: cell
+                        },
+                        j
+                      )),
+                      sections.subjectPercentage && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+                        "td",
+                        {
+                          className: `${modern ? "border-0 px-2" : "border"} py-1 align-middle`,
+                          style: { borderColor: p.line },
+                          children: modern ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "flex flex-col items-center gap-[2px]", children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "font-semibold", style: { color: p.primary }, children: subjectPercentage(row) }),
+                            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
                               "span",
                               {
-                                className: "block h-full rounded-full",
-                                style: {
-                                  width: `${subjectPercentageValue(row)}%`,
-                                  backgroundColor: p.overall
-                                }
+                                className: "block h-[3px] w-full rounded-full overflow-hidden",
+                                style: { backgroundColor: p.line },
+                                children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+                                  "span",
+                                  {
+                                    className: "block h-full rounded-full",
+                                    style: {
+                                      width: `${subjectPercentageValue(row)}%`,
+                                      backgroundColor: p.overall
+                                    }
+                                  }
+                                )
                               }
                             )
-                          }
-                        )
-                      ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "block text-center rc-wrap", children: subjectPercentage(row) })
-                    }
-                  ),
-                  /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Td, { theme: activeTheme, modern, className: "px-1 text-center", children: row.grade }),
-                  sections.subjectRemarks && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Td, { theme: activeTheme, modern, className: "text-left px-1.5", children: row.remark })
-                ]
-              },
-              i
-            )) })
-          ] })
+                          ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "block text-center rc-wrap", children: subjectPercentage(row) })
+                        }
+                      )
+                    ]
+                  },
+                  i
+                )) })
+              ]
+            }
+          )
         ] }),
         modern ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
           "div",
@@ -54476,16 +54987,20 @@ function AcademicReportPreview({ student, school, photoDataUrl, theme }) {
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
                   "div",
                   {
-                    className: "text-white text-center text-[10px] py-1 font-bold uppercase rc-wrap",
-                    style: { backgroundColor: p.overall },
+                    className: "text-white text-center py-1 font-bold uppercase rc-wrap",
+                    style: { backgroundColor: p.overall, fontSize: mmCss(TYPE_MM.summaryLabel) },
                     children: "Overall Performance"
                   }
                 ),
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
                   "div",
                   {
-                    className: "flex-1 flex items-center justify-center text-center text-[15px] font-extrabold px-1 py-1 rc-wrap",
-                    style: { backgroundColor: p.overallSoft, color: p.overall },
+                    className: "flex-1 flex items-center justify-center text-center font-extrabold px-1 py-1 rc-wrap",
+                    style: {
+                      backgroundColor: p.overallSoft,
+                      color: p.overall,
+                      fontSize: mmCss(TYPE_MM.overallValue)
+                    },
                     children: model.overallPerformance
                   }
                 )
@@ -54493,7 +55008,7 @@ function AcademicReportPreview({ student, school, photoDataUrl, theme }) {
             }
           )
         ] }),
-        sections.gradingScale && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "mt-2 text-[9px] text-ink-700 rc-wrap", children: [
+        sections.gradingScale && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "mt-2 text-ink-700 rc-wrap", style: { fontSize: mmCss(TYPE_MM.gradingScale) }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "font-bold uppercase", children: "Grading Scale:" }),
           " ",
           model.gradeScale
@@ -54508,53 +55023,67 @@ function AcademicReportPreview({ student, school, photoDataUrl, theme }) {
                 "div",
                 {
                   className: "font-bold uppercase mb-1",
-                  style: { color: modern ? p.primary : void 0 },
+                  style: { color: modern ? p.primary : void 0, fontSize: mmCss(TYPE_MM.remarksLabel) },
                   children: kind === "teacher" ? "Teacher\u2019s Remarks" : "Principal\u2019s Remarks"
                 }
               ),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { className: "text-ink-700 leading-snug whitespace-pre-line rc-wrap", children: (kind === "teacher" ? model.teacherRemarks : model.principalRemarks) || "\u2014" })
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+                "p",
+                {
+                  className: "text-ink-700 leading-snug whitespace-pre-line rc-wrap",
+                  style: { fontSize: mmCss(TYPE_MM.remarks) },
+                  children: (kind === "teacher" ? model.teacherRemarks : model.principalRemarks) || "\u2014"
+                }
+              )
             ]
           },
           kind
         )) }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: `${modern ? "mt-5" : "mt-6"} grid grid-cols-3 gap-2 text-[10px]`, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            SignBlock2,
-            {
-              label: "Class Teacher",
-              name: model.signatures.teacherName,
-              image: school.teacherSignDataUrl,
-              modern,
-              accent: p.primary
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            SignBlock2,
-            {
-              label: "Checked by (Vice Principal)",
-              name: model.signatures.checkedByName,
-              image: school.checkedBySignDataUrl,
-              modern,
-              accent: p.primary
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            SignBlock2,
-            {
-              label: "Principal",
-              name: model.signatures.principalName,
-              image: school.principalSignDataUrl,
-              stamp: school.stampDataUrl,
-              modern,
-              accent: p.primary
-            }
-          )
-        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+          "div",
+          {
+            className: `${modern ? "mt-5" : "mt-6"} grid grid-cols-3 gap-2`,
+            style: { fontSize: mmCss(TYPE_MM.signatureName) },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+                SignBlock2,
+                {
+                  label: "Class Teacher",
+                  name: model.signatures.teacherName,
+                  image: school.teacherSignDataUrl,
+                  modern,
+                  accent: p.primary
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+                SignBlock2,
+                {
+                  label: "Checked by (Vice Principal)",
+                  name: model.signatures.checkedByName,
+                  image: school.checkedBySignDataUrl,
+                  modern,
+                  accent: p.primary
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+                SignBlock2,
+                {
+                  label: "Principal",
+                  name: model.signatures.principalName,
+                  image: school.principalSignDataUrl,
+                  stamp: school.stampDataUrl,
+                  modern,
+                  accent: p.primary
+                }
+              )
+            ]
+          }
+        ),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
           "div",
           {
-            className: "mt-3 rounded-sm text-center text-[8px] py-1 rc-wrap",
-            style: modern ? { backgroundColor: p.primary, color: "#ffffff" } : { border: `1px solid ${p.line}`, color: "#475569" },
+            className: "mt-3 rounded-sm text-center py-1 rc-wrap",
+            style: modern ? { backgroundColor: p.primary, color: "#ffffff", fontSize: mmCss(TYPE_MM.footer) } : { border: `1px solid ${p.line}`, color: "#475569", fontSize: mmCss(TYPE_MM.footer) },
             children: "This report card is generated from the marks recorded by the school."
           }
         )
@@ -54618,8 +55147,22 @@ function ResultCell({
       className: "flex flex-col items-center justify-center gap-0.5 px-2 py-2 min-w-0",
       style: divider ? { borderLeft: `1px solid ${dividerColor}` } : void 0,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "text-[9px] font-bold uppercase tracking-wide text-ink-500 rc-wrap", children: label }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "text-[19px] font-extrabold leading-tight rc-wrap", style: { color }, children: value })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+          "div",
+          {
+            className: "font-bold uppercase tracking-wide text-ink-500 rc-wrap",
+            style: { fontSize: mmCss(TYPE_MM.summaryLabel) },
+            children: label
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+          "div",
+          {
+            className: "font-extrabold leading-tight rc-wrap",
+            style: { color, fontSize: mmCss(TYPE_MM.summaryValue) },
+            children: value
+          }
+        )
       ]
     }
   );
@@ -54633,12 +55176,19 @@ function SummaryBox({
     /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
       "div",
       {
-        className: "text-center text-[10px] py-1 font-bold uppercase rc-wrap",
-        style: { backgroundColor: theme.palette.headerFill },
+        className: "text-center py-1 font-bold uppercase rc-wrap",
+        style: { backgroundColor: theme.palette.headerFill, fontSize: mmCss(TYPE_MM.summaryLabel) },
         children: label
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "flex-1 flex items-center justify-center text-[15px] font-bold py-1 rc-wrap", children: value })
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      "div",
+      {
+        className: "flex-1 flex items-center justify-center font-bold py-1 rc-wrap",
+        style: { fontSize: mmCss(TYPE_MM.summaryValue) },
+        children: value
+      }
+    )
   ] });
 }
 function InfoColumn2({
@@ -54657,12 +55207,19 @@ function InfoColumn2({
           "span",
           {
             className: "font-semibold w-[27mm] shrink-0 rc-wrap",
-            style: { color: modern ? accent : void 0 },
+            style: { color: modern ? accent : void 0, fontSize: mmCss(TYPE_MM.info) },
             children: item.label
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "text-ink-500 shrink-0", children: ":" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "flex-1 min-w-0 whitespace-normal rc-wrap text-ink-900", children: item.value || "\u2014" })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "text-ink-500 shrink-0", style: { fontSize: mmCss(TYPE_MM.info) }, children: ":" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+          "span",
+          {
+            className: "flex-1 min-w-0 whitespace-normal rc-wrap text-ink-900",
+            style: { fontSize: mmCss(TYPE_MM.info) },
+            children: item.value || "\u2014"
+          }
+        )
       ]
     },
     i
@@ -54678,7 +55235,7 @@ function SignBlock2({
 }) {
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "text-center min-w-0", children: [
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: `${modern ? "h-[14mm]" : "h-[16mm]"} flex items-end justify-center relative`, children: [
-      image ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("img", { src: image, alt: "", className: "max-h-[14mm] object-contain" }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "text-[9px] text-ink-300", children: "Signature" }),
+      image ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("img", { src: image, alt: "", className: "max-h-[14mm] object-contain" }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { fontSize: mmCss(TYPE_MM.footer) }, className: "text-ink-300", children: "Signature" }),
       stamp && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("img", { src: stamp, alt: "", className: "absolute -right-1 -top-1 h-[16mm] object-contain opacity-80" })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
@@ -54691,8 +55248,8 @@ function SignBlock2({
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
             "div",
             {
-              className: "text-[8.5px] font-bold uppercase tracking-wide rc-wrap",
-              style: { color: modern ? accent : "#475569" },
+              className: "font-bold uppercase tracking-wide rc-wrap",
+              style: { color: modern ? accent : "#475569", fontSize: mmCss(TYPE_MM.footer) },
               children: label
             }
           )
@@ -54730,6 +55287,29 @@ function ReportCardPreview({ student, school, photoDataUrl, themeId }) {
 
 // scripts/render-preview.tsx
 var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+var parityFailures = 0;
+function checkTypographyParity(student) {
+  console.log("\n### typography parity (preview side)");
+  for (const theme of REPORT_CARD_THEMES) {
+    const html = (0, import_server.renderToStaticMarkup)(
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ReportCardPreview, { student, school: { ...SCHOOL, reportTheme: theme.id } })
+    );
+    const wanted = [
+      ["academic table", TYPE_MM.academic],
+      ["student info grid", TYPE_MM.info],
+      ["remarks", TYPE_MM.remarks],
+      ["footer", TYPE_MM.footer]
+    ];
+    for (const [label, mm] of wanted) {
+      const needle = `font-size:${mmCss(mm)}`;
+      if (!html.includes(needle)) {
+        console.log(`  FAIL [${theme.id}] ${label} does not use the shared size (${needle})`);
+        parityFailures++;
+      }
+    }
+  }
+  console.log(`  checked ${REPORT_CARD_THEMES.length} themes x 4 shared sizes`);
+}
 globalThis.FileReader = class FileReader2 {
   result;
   error;
@@ -54838,6 +55418,7 @@ async function run(file) {
   );
   const text = sample.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   console.log("  text sample:", text.slice(0, 2400));
+  checkTypographyParity(students[0]);
 }
 (async () => {
   const targets = process.argv.slice(2);
@@ -54847,11 +55428,20 @@ async function run(file) {
     "testdata_complex_structure.xlsx",
     "testdata_alt_subjects.xlsx",
     "testdata_sheetname_class.xlsx",
-    "testdata_10_students.xlsx"
+    "testdata_10_students.xlsx",
+    "testdata_sbs_components.xlsx",
+    "testdata_sbs_components_no_name.xlsx",
+    "testdata_unmerged_groups.xlsx"
   ];
   for (const file of files) {
     await run(file);
   }
+  if (parityFailures > 0) {
+    console.error(`
+\u2717 typography parity FAILED (${parityFailures} mismatch(es))`);
+    process.exit(1);
+  }
+  console.log("\n\u2713 typography parity OK \u2014 preview and PDF share the same mm sizes.");
 })().catch((e) => {
   console.error("RENDER ERROR:", e);
   process.exit(1);

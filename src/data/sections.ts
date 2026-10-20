@@ -24,6 +24,15 @@ export const mallSections: MallSection[] = [
     available: true,
   },
   {
+    id: 'game-zone',
+    name: 'Game Zone',
+    emoji: '🎮',
+    tagline: 'Pair-3Balls — play vs computer, a private room, or a random player',
+    accent: '#8b5cf6',
+    gradient: 'from-violet-600 via-purple-600 to-fuchsia-600',
+    available: true,
+  },
+  {
     id: 'tech-ai',
     name: 'Tech & AI',
     emoji: '🤖',

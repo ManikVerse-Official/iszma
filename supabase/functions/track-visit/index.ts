@@ -24,7 +24,12 @@ const clean = (value: unknown, max: number): string =>
 serve(async (req: Request) => {
   const preflight = handleOptions(req);
   if (preflight) return preflight;
-  if (req.method !== "POST") return errorResponse("Method not allowed", 405);
+  /*
+   * `req` is threaded into every response so the CORS headers come from the
+   * allowlist (SITE_ORIGINS + local dev origins) instead of a wildcard — this is
+   * the fix for the local-origin rejection. See _shared/http.ts.
+   */
+  if (req.method !== "POST") return errorResponse("Method not allowed", 405, req);
 
   try {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -47,7 +52,7 @@ serve(async (req: Request) => {
       }
       if (user.email && user.email.toLowerCase().trim() === ADMIN_EMAIL) admin = true;
       if (admin) {
-        return jsonResponse({ success: true, tracked: false, reason: "admin" });
+        return jsonResponse({ success: true, tracked: false, reason: "admin" }, 200, req);
       }
     }
 
@@ -77,13 +82,13 @@ serve(async (req: Request) => {
 
     if (error) {
       console.error("track-visit insert failed:", error.message);
-      return errorResponse("Could not record the visit", 500);
+      return errorResponse("Could not record the visit", 500, req);
     }
 
-    return jsonResponse({ success: true, tracked: true });
+    return jsonResponse({ success: true, tracked: true }, 200, req);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("track-visit failed:", message);
-    return errorResponse(message, 500);
+    return errorResponse(message, 500, req);
   }
 });

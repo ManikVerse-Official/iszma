@@ -21,8 +21,8 @@ import { FREE_USE_LIMIT } from '../config/plans';
 import { generateAllAndZip, downloadBlob } from '../services/bulkGenerator';
 import { validateStudents } from '../services/validationEngine';
 import ReportCardPreview from '../components/report/ReportCardPreview';
-import ReportCardScaler from '../components/report/ReportCardScaler';
-import { buildPhotoIndex, resolvePhotosForStudents } from '../services/photoMatcher';
+import PreviewFrame from '../components/report/PreviewFrame';
+import { resolvePhotosWithOverrides } from '../services/photoOverrides';
 import { buildZipFilename } from '../services/pdfGenerator';
 import { getTheme } from '../themes';
 import type { GenerationResult } from '../types';
@@ -31,6 +31,7 @@ export default function GenerateReports() {
   const students = useAppStore((s) => s.students);
   const school = useAppStore((s) => s.schoolProfile);
   const photoMap = useAppStore((s) => s.photoMap);
+  const photoOverrides = useAppStore((s) => s.photoOverrides);
   const validation = useAppStore((s) => s.validation);
   const setValidation = useAppStore((s) => s.setValidation);
   const generation = useAppStore((s) => s.generation);
@@ -72,11 +73,13 @@ export default function GenerateReports() {
     return students.filter((s) => !badIds.has(s.studentId));
   }, [mode, students, validation]);
 
-  /* Photos are matched by identity (roll / admission / name), never by order. */
-  const studentPhotos = useMemo(
-    () => resolvePhotosForStudents(buildPhotoIndex(photoMap), students).photos,
-    [photoMap, students],
+  /* Photos are matched by identity (roll / admission / name), never by order,
+   * and the user's manual corrections from the review table are applied on top. */
+  const photoResolution = useMemo(
+    () => resolvePhotosWithOverrides(students, photoMap, photoOverrides),
+    [photoMap, students, photoOverrides],
   );
+  const studentPhotos = photoResolution.photos;
   const theme = getTheme(school.reportTheme);
 
   const start = async () => {
@@ -104,6 +107,7 @@ export default function GenerateReports() {
         students: chosenStudents,
         school,
         photoMap,
+        photoOverrides,
         batchSize: 5,
         signal: controller.signal,
         onProgress: ({ completed, failed, total, current }) => {
@@ -461,6 +465,15 @@ export default function GenerateReports() {
                 <span className="text-ink-500">Photos available</span>
                 <span className="font-semibold">{Object.keys(photoMap).length > 0 ? 'YES' : 'none'}</span>
               </div>
+              <div className="flex items-center justify-between">
+                <span className="text-ink-500">Photos to print</span>
+                <span className="font-semibold">
+                  {studentPhotos.size}
+                  {photoOverrides && Object.keys(photoOverrides).length > 0 && (
+                    <span className="text-ink-500 font-normal"> · manual on {Object.keys(photoOverrides).length}</span>
+                  )}
+                </span>
+              </div>
             </div>
           ) : (
             <p className="text-sm text-ink-500">Validating...</p>
@@ -486,14 +499,17 @@ export default function GenerateReports() {
               print-ready and follow this layout on A4.
             </span>
           </div>
-          <div className="card-body overflow-y-auto overflow-x-hidden max-h-[720px]">
-            <ReportCardScaler>
+          <div className="card-body">
+            <PreviewFrame
+              title={`Sample preview — ${chosenStudents[0].name} (Roll ${chosenStudents[0].rollNo})`}
+              caption="Exactly what the generated PDF contains."
+            >
               <ReportCardPreview
                 student={chosenStudents[0]}
                 school={school}
                 photoDataUrl={studentPhotos.get(chosenStudents[0].studentId)}
               />
-            </ReportCardScaler>
+            </PreviewFrame>
           </div>
         </div>
       )}

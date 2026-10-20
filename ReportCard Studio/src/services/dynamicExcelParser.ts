@@ -471,6 +471,14 @@ function analyzeSheetStructure(
   const { subjectGroups, gradeFields } =
     buildSubjectGroups(classifications);
 
+  /*
+   * Attach the paper's own maximum marks to every component column. A mark
+   * sheet prints them in a dedicated row under the component headers
+   * (PT 10 | NB 5 | SEA 5 | SA1 80 | TOTAL 100); without it a report card can
+   * only show marks, never what they are out of.
+   */
+  applyMaxMarksRow(ws, range, layout, subjectGroups, studentFields);
+
   const confidence = calculateConfidence(
     studentFields,
     subjectGroups,
@@ -746,6 +754,32 @@ function detectHeaderLayout(
    */
   if (dataStartRow < 0) dataStartRow = firstRow + 1;
 
+  /*
+   * Absorb rows that are still part of the vertically merged header block.
+   *
+   * Mark sheets usually stack a "maximum marks" row under the merged identity
+   * and subject labels (S.No spans three rows, so does Student Name). That row
+   * is almost all numbers, so it looks exactly like a data row — but it is not
+   * a student. A merge that starts above a row and ends on/after it is proof
+   * the row is still header context.
+   *
+   * Without this the max-marks row became student #1, which shifted every later
+   * row and (because the label row also owns the columns) mis-read component
+   * marks.
+   */
+  let firstDataRow = dataStartRow;
+
+  while (
+    firstDataRow <= range.e.r &&
+    mergedCells.some(
+      (merge) =>
+        merge.startRow < firstDataRow &&
+        merge.endRow >= firstDataRow,
+    )
+  ) {
+    firstDataRow++;
+  }
+
   const headerEndRow = Math.max(firstRow, dataStartRow - 1);
 
   const titleRows: number[] = [];
@@ -759,7 +793,7 @@ function detectHeaderLayout(
     headerRows: headerEndRow - firstRow + 1,
     headerStartRow: firstRow,
     headerEndRow,
-    dataStartRow: headerEndRow + 1,
+    dataStartRow: Math.max(headerEndRow + 1, firstDataRow),
     titleRows,
   };
 }
@@ -939,6 +973,64 @@ function buildEffectiveColumnHeaders(
     headerRowIndices.push(layout.headerEndRow);
   }
 
+  const lastHeaderRow = headerRowIndices[headerRowIndices.length - 1];
+
+  /*
+   * Grouped headers often spell the subject name only above the FIRST of its
+   * component columns and leave the rest of that row blank (no merged cells at
+   * all). Carrying the label across those blanks is what keeps "English | PT",
+   * "English | NB", "English | SEA" … attached to the same subject.
+   *
+   * The LAST header row is never filled: it carries one distinct component per
+   * column (PT / NB / SEA / SA1 / TOTAL) and must not be propagated sideways.
+   */
+  const filledText = new Map<string, string>();
+
+  for (const row of headerRowIndices) {
+    let carried = '';
+    /*
+     * How far right a carried label may reach.
+     *
+     * A label that lives inside a merged region describes exactly the columns
+     * of that region — no further. "S.No" (merged B3:B5) must not spill into
+     * the next blank column, otherwise "Adm" inherits it and the admission
+     * number is read as a roll number; the same leak turned the merged
+     * "Father name" (E3:E5) into the mother's column. Labels on unmerged cells
+     * keep the historical "carry up to the next label" behaviour used by
+     * grouped-but-unmerged mark sheets.
+     */
+    let carriedEndCol = -1;
+
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      let text = cleanHeaderText(getCellText(ws, row, col));
+      const merge = findMergeAtPosition(mergedCells, row, col);
+
+      if (!text && merge) {
+        text = cleanHeaderText(merge.value);
+      }
+
+      if (text) {
+        carried = text;
+        carriedEndCol = merge ? merge.endCol : range.e.c;
+      } else if (
+        carried &&
+        row !== lastHeaderRow &&
+        !merge &&
+        col <= carriedEndCol &&
+        /*
+         * A column with no data below the header cannot own an inherited
+         * label: a stray empty column next to "Attendance" would otherwise be
+         * classified as a second attendance column and shadow the real one.
+         */
+        columnHasData(ws, range, col, layout.dataStartRow)
+      ) {
+        text = carried;
+      }
+
+      filledText.set(`${row}:${col}`, text);
+    }
+  }
+
   for (
     let col = range.s.c;
     col <= range.e.c;
@@ -947,30 +1039,9 @@ function buildEffectiveColumnHeaders(
     const labels: string[] = [];
 
     for (const row of headerRowIndices) {
-      let text = getCellText(
-        ws,
-        row,
-        col,
-      );
-
-      /*
-       * If this position is inside a merged cell,
-       * inherit the actual merged-cell value.
-       */
-      if (!text) {
-        const merge =
-          findMergeAtPosition(
-            mergedCells,
-            row,
-            col,
-          );
-
-        if (merge) {
-          text = merge.value;
-        }
-      }
-
-      text = cleanHeaderText(text);
+      const text = filledText.get(
+        `${row}:${col}`,
+      ) ?? '';
 
       if (!text) continue;
 
@@ -1008,6 +1079,26 @@ function buildEffectiveColumnHeaders(
   }
 
   return result;
+}
+
+/**
+ * Does the column hold any value at or below the first data row?
+ *
+ * Used only to decide whether an inherited (sideways-carried) header label may
+ * attach to a column. A trailing/stray column that holds nothing at all is not
+ * a real data column, so it must not inherit its neighbour's label.
+ */
+function columnHasData(
+  ws: XLSX.WorkSheet,
+  range: XLSX.Range,
+  col: number,
+  fromRow: number,
+): boolean {
+  for (let row = fromRow; row <= range.e.r; row++) {
+    if (getCellText(ws, row, col)) return true;
+  }
+
+  return false;
 }
 
 function cleanHeaderText(
@@ -1613,6 +1704,103 @@ function hasMarksLikeHeader(
     path.includes('obtained') ||
     path.includes('score')
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* MAXIMUM MARKS ROW                                                         */
+/* -------------------------------------------------------------------------- */
+
+/** Numeric value of a cell, or null when it is empty / not a number. */
+function readCellNumber(ws: XLSX.WorkSheet, row: number, col: number): number | null {
+  const cell = ws[XLSX.utils.encode_cell({ r: row, c: col })];
+  if (!cell) return null;
+  if (typeof cell.v === 'number' && Number.isFinite(cell.v)) return cell.v;
+  const text = String(cell.v ?? '').replace(/%/g, '').trim();
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** True when a cell holds text (a student name, a subject label, …). */
+function cellHasText(ws: XLSX.WorkSheet, row: number, col: number): boolean {
+  const cell = ws[XLSX.utils.encode_cell({ r: row, c: col })];
+  return typeof cell?.v === 'string' && cell.v.trim() !== '';
+}
+
+/**
+ * Reads the workbook's maximum-marks row and writes it onto the components.
+ *
+ * The row is only ever looked for BETWEEN the header block and the first student
+ * row — never inside the data — so a student whose components happen to add up
+ * to their total can never be mistaken for the paper's maxima. Inside that
+ * window it must carry no text in any component column and prove itself: at
+ * least one subject group's component values have to add up to that group's own
+ * TOTAL cell on the same row.
+ *
+ * An existing maximum (from a header like "PT (10)") is never overwritten.
+ */
+function applyMaxMarksRow(
+  ws: XLSX.WorkSheet,
+  range: XLSX.Range,
+  layout: { headerStartRow: number; headerRows: number; headerEndRow: number; dataStartRow: number },
+  subjectGroups: SubjectGroup[],
+  _studentFields: { excelColumn: number }[],
+): void {
+  if (subjectGroups.length === 0) return;
+
+  const firstCandidate = layout.headerEndRow + 1;
+  const lastCandidate = Math.min(range.e.r, layout.dataStartRow - 1);
+  if (lastCandidate < firstCandidate) return;
+
+  const components = subjectGroups.flatMap((group) => group.components ?? []);
+
+  let maxima: Map<number, number> | null = null;
+
+  for (let row = firstCandidate; row <= lastCandidate; row++) {
+    /* A maxima row never has a subject or note written over a component. */
+    if (components.some((component) => cellHasText(ws, row, component.col))) continue;
+
+    const values = new Map<number, number>();
+    for (const component of components) {
+      const value = readCellNumber(ws, row, component.col);
+      if (value !== null) values.set(component.col, value);
+    }
+    if (values.size === 0) continue;
+    /* Every subject group must be represented, or this is not the maxima row. */
+    if (!subjectGroups.every((group) => (group.components ?? []).some((c) => values.has(c.col)))) {
+      continue;
+    }
+
+    /* Proof: some group's component values add up to its own TOTAL on this row. */
+    const provesItself = subjectGroups.some((group) => {
+      const total = (group.components ?? []).find((component) => component.isTotal);
+      if (!total) return false;
+      const totalValue = values.get(total.col);
+      if (totalValue === undefined) return false;
+      const parts = (group.components ?? [])
+        .filter((component) => !component.isTotal)
+        .map((component) => values.get(component.col))
+        .filter((value): value is number => value !== undefined);
+      if (parts.length === 0) return false;
+      const sum = parts.reduce((totalOfParts, value) => totalOfParts + value, 0);
+      return Math.abs(sum - totalValue) <= 0.001;
+    });
+    if (!provesItself) continue;
+
+    maxima = values;
+    break;
+  }
+
+  if (!maxima) return;
+
+  for (const group of subjectGroups) {
+    for (const component of group.components ?? []) {
+      const value = maxima.get(component.col);
+      if (value === undefined || value <= 0) continue;
+      if (typeof component.maxMarks === 'number' && component.maxMarks > 0) continue;
+      component.maxMarks = value;
+    }
+  }
 }
 
 /* -------------------------------------------------------------------------- */
