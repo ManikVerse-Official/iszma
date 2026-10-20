@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { useGreeting } from '../context/GreetingContext';
 import {
-  getAdminEmailHint,
   isSupabaseAuthAvailable,
   signInAdmin,
 } from '../services/adminAuth';
@@ -23,9 +22,11 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
 }) => {
   const { refreshAdmin } = useGreeting();
 
-  const [email, setEmail] = useState(
-    getAdminEmailHint(),
-  );
+  /*
+   * Starts empty on purpose: the admin address is no longer shipped in the
+   * browser bundle, so the field is never prefilled with it.
+   */
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] =
     useState(false);
