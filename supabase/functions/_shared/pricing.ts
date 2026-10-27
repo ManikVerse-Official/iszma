@@ -21,6 +21,10 @@ export type ThemePriceMap = Map<string, ThemePrice>;
 
 /** Emergency fallback only — the `theme_prices` table overrides these. */
 export const FALLBACK_THEME_PRICES: Record<string, ThemePrice> = {
+  // The one free welcome card. It is listed explicitly (price 0) so the payment
+  // server can answer "this card is free" instead of "unknown theme" — and so
+  // no gateway order is ever attempted for it.
+  "free-basic-wish": { inr: 0, usd: 0 },
   // Romantic
   "romantic-rose-note": { inr: 47, usd: 2 },
   "romantic-candlelight": { inr: 79, usd: 3 },

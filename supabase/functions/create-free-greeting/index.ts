@@ -3,16 +3,31 @@
 // create-free-greeting — the one free basic card
 // ---------------------------------------------------------------------------
 // Mints a free greeting card for the single designated free theme. There is no
-// payment: instead the free-use limits (one per email, two per IP) are enforced
-// server-side via the shared usage guard, so clearing the browser cannot grant
-// another free card.
+// payment. The free-use limit is enforced server-side BEFORE anything is written:
+//
+//   one free card per email per ROLLING 24 hours, and at most two free cards
+//   from one network (the existing policy).
+//
+// The check-and-claim happens in one atomic database function
+// (`consume_free_greeting`, migration 20261025_step19), so two concurrent
+// requests cannot both claim the same slot. The claim is released again if the
+// card row cannot be written, so a failed attempt never burns the 24-hour window.
+//
+// Failure responses always carry a machine-readable `code` so the browser can
+// tell a reached limit (429) apart from an unverifiable limit (503) instead of
+// treating every 429 as "you used your free card".
 //
 // POST body mirrors create-greeting, minus `payment`.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { errorResponse, handleOptions, jsonResponse } from "../_shared/http.ts";
+import { handleOptions, jsonResponse } from "../_shared/http.ts";
 import { createAdminClient } from "../_shared/auth.ts";
-import { checkAndConsumeTrial, clientIp } from "../_shared/entitlement.ts";
+import { clientIp } from "../_shared/entitlement.ts";
+import {
+  claimFreeGreeting,
+  freeGreetingStatus,
+  releaseFreeGreetingClaim,
+} from "../_shared/freeGreeting.ts";
 
 const FREE_THEME_ID = "free-basic-wish";
 const GREETING_LIFESPAN_MS = 48 * 60 * 60 * 1000;
@@ -41,16 +56,28 @@ const newCardId = (): string => {
   return id;
 };
 
+/** Structured, non-secret failure. */
+const failure = (
+  req: Request,
+  status: number,
+  code: string,
+  error: string,
+  extra: Record<string, unknown> = {},
+): Response => jsonResponse({ success: false, code, error, ...extra }, status, req);
+
 serve(async (req: Request) => {
   const preflight = handleOptions(req);
   if (preflight) return preflight;
-  if (req.method !== "POST") return errorResponse("Method not allowed", 405);
+  if (req.method !== "POST") return failure(req, 405, "METHOD_NOT_ALLOWED", "Method not allowed");
 
   const ip = clientIp(req);
   const supabase = createAdminClient();
 
   try {
-    const body = (await req.json()) as Record<string, unknown>;
+    const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!body || typeof body !== "object") {
+      return failure(req, 400, "INVALID_REQUEST", "A JSON body is required");
+    }
 
     const senderName = clean(body.sender_name, 80);
     const receiverName = clean(body.receiver_name, 80);
@@ -58,26 +85,47 @@ serve(async (req: Request) => {
     const theme = clean(body.theme, 80) || FREE_THEME_ID;
 
     if (theme !== FREE_THEME_ID) {
-      return errorResponse("Only the free basic card is available without payment", 402);
+      return failure(
+        req,
+        402,
+        "PAID_THEME",
+        "Only the free welcome card can be published without payment.",
+      );
     }
     if (!senderName || !receiverName || !message) {
-      return errorResponse("Sender, receiver and message are all required", 400);
+      return failure(req, 400, "INVALID_REQUEST", "Sender, receiver and message are all required");
     }
 
     const clientEmail = clean(body.client_email, 150).toLowerCase();
     if (!isEmail(clientEmail)) {
-      return errorResponse("Please provide a valid email address", 400);
+      return failure(req, 400, "INVALID_REQUEST", "Please provide a valid email address");
     }
 
     const imageUrl = clean(body.external_image_url, 500);
     if (!isSafeImageUrl(imageUrl)) {
-      return errorResponse("Image URL must be an http(s) link", 400);
+      return failure(req, 400, "INVALID_REQUEST", "Image URL must be an http(s) link");
     }
 
-    // Enforce one free card per email, at most two per IP.
-    const decision = await checkAndConsumeTrial(supabase, "free_greeting", clientEmail, ip);
+    /*
+     * Claim the free slot FIRST. Nothing is written unless the database atomically
+     * confirms that this email has not used its free card in the last 24 hours and
+     * this network still has allowance.
+     */
+    const decision = await claimFreeGreeting(supabase, clientEmail, ip);
     if (!decision.allowed) {
-      return errorResponse(decision.reason ?? "Free card limit reached", 429);
+      return failure(
+        req,
+        freeGreetingStatus(decision.code),
+        decision.code ?? "USAGE_UNAVAILABLE",
+        decision.message ?? "Free card limit reached",
+        {
+          ...(decision.retryAfterSeconds
+            ? { retryAfterSeconds: decision.retryAfterSeconds }
+            : {}),
+          // Only a reached limit is final; an unverifiable limit is retryable.
+          retryable: decision.code === "USAGE_UNAVAILABLE",
+        },
+      );
     }
 
     const requestedFont = clean(body.font, 40);
@@ -136,7 +184,15 @@ serve(async (req: Request) => {
 
     if (cardError || !card) {
       console.error("Free card insert failed:", cardError?.message);
-      return errorResponse("Could not create the greeting card", 500);
+      /* The card does not exist, so the claim must not count against the limit. */
+      await releaseFreeGreetingClaim(supabase, decision.claimId);
+      return failure(
+        req,
+        500,
+        "CREATE_FAILED",
+        "We could not create the greeting card. Please try again — your free card has not been used.",
+        { retryable: true },
+      );
     }
 
     // Ledger row (amount 0, provider 'free') — best-effort.
@@ -157,12 +213,19 @@ serve(async (req: Request) => {
       .select("*")
       .single();
 
-    console.log("Free greeting card created:", { cardId, ip: ip || null });
+    /* Never log the raw address: the claim row is the auditable record. */
+    console.log("Free greeting card created:", { cardId, hasIp: Boolean(ip) });
 
-    return jsonResponse({ success: true, card, transaction, remaining: decision.remaining });
+    return jsonResponse(
+      { success: true, card, transaction, remaining: decision.remaining },
+      200,
+      req,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("create-free-greeting failed:", message);
-    return errorResponse(message, 500);
+    return failure(req, 500, "CREATE_FAILED", "We could not create your free card right now.", {
+      retryable: true,
+    });
   }
 });

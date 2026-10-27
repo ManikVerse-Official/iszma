@@ -18,7 +18,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { errorResponse, handleOptions, jsonResponse } from "../_shared/http.ts";
 import { createAdminClient, getUserFromRequest, isAdminUser } from "../_shared/auth.ts";
-import { getStudioPlan } from "../_shared/plans.ts";
+import { loadStudioPlans, type StudioPlan } from "../_shared/plans.ts";
 
 const clean = (value: unknown, max: number): string =>
   typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -46,11 +46,12 @@ interface SubscriptionRow {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const withStatus = (row: SubscriptionRow) => {
+const withStatus = (row: SubscriptionRow, plans: Record<string, StudioPlan>) => {
   const expiresAt = new Date(row.expires_at).getTime();
   const now = Date.now();
   const daysLeft = Math.ceil((expiresAt - now) / DAY_MS);
-  const plan = getStudioPlan(row.plan_id);
+  /* Prices already recorded on the row win; the live plan is only a fallback. */
+  const plan = plans[row.plan_id] ?? null;
   const raw = (row.status ?? "active").toLowerCase();
 
   let status: "active" | "expiring" | "expired" | "cancelled" = "active";
@@ -101,7 +102,8 @@ serve(async (req: Request) => {
         .order("expires_at", { ascending: true });
       if (error) throw new Error(error.message);
 
-      const subscriptions = ((data ?? []) as SubscriptionRow[]).map(withStatus);
+      const plans = await loadStudioPlans(supabase);
+      const subscriptions = ((data ?? []) as SubscriptionRow[]).map((row) => withStatus(row, plans));
 
       // Per-email free-use counts, so the owner can size up the freeloaders.
       const { data: usage } = await supabase
@@ -167,7 +169,9 @@ serve(async (req: Request) => {
       if (readError) throw new Error(readError.message);
       if (!existing) return errorResponse("No subscription for that email", 404);
 
-      const plan = getStudioPlan(existing.plan_id);
+      /* Renewal uses the plan's live billing duration, which an admin may change. */
+      const plans = await loadStudioPlans(supabase);
+      const plan = plans[existing.plan_id] ?? null;
       const months = action === "renew"
         ? (plan?.durationMonths ?? 6)
         : Math.max(1, Math.min(36, Number(body.months) || 6));

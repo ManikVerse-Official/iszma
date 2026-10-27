@@ -1,5 +1,10 @@
 import { GreetingCard, PaymentProof, Receipt, Transaction } from '../types';
 import { supabase, isSupabaseConfigured } from './supabase';
+import {
+  FunctionRequestError,
+  classifyFunctionFailure,
+  readFunctionFailure,
+} from './functionErrors';
 
 /** Every greeting card stays live for exactly 48 hours. */
 export const GREETING_LIFESPAN_HOURS = 48;
@@ -158,26 +163,15 @@ export interface CreateGreetingResult {
   receipt?: Receipt;
 }
 
-/** Pulls the human-readable message out of a failed function invocation. */
-const readFunctionError = async (error: unknown): Promise<string> => {
-  const context = (error as { context?: Response })?.context;
-  if (context && typeof context.json === 'function') {
-    try {
-      const body = await context.json();
-      if (body?.error) return String(body.error);
-    } catch {
-      /* fall through to the generic message */
-    }
-  }
-  return error instanceof Error ? error.message : 'Could not create the greeting card';
-};
-
 /**
  * Creates a card through the secure `create-greeting` Edge Function.
  *
  * The browser never writes to `greeting_cards` or `transactions` directly —
  * RLS denies it. The function verifies admin status from the session JWT, or a
  * gateway-verified payment, then writes the card and its ledger row together.
+ *
+ * A failure is thrown as a `FunctionRequestError` so the UI can tell a reached
+ * limit apart from a retryable server/connectivity problem.
  */
 export const createGreetingCard = async (
   input: CreateGreetingInput,
@@ -199,9 +193,15 @@ export const createGreetingCard = async (
         : undefined,
     });
 
-    if (error) throw new Error(await readFunctionError(error));
+    if (error) throw new FunctionRequestError(await readFunctionFailure(error, data));
     if (!data?.success || !data.card) {
-      throw new Error(data?.error ?? 'Could not create the greeting card');
+      throw new FunctionRequestError(
+        classifyFunctionFailure({
+          status: 200,
+          body: data,
+          fallbackMessage: 'Could not create the greeting card',
+        }),
+      );
     }
 
     return {
@@ -267,9 +267,15 @@ export const createFreeGreetingCard = async (
         : undefined,
     });
 
-    if (error) throw new Error(await readFunctionError(error));
+    if (error) throw new FunctionRequestError(await readFunctionFailure(error, data));
     if (!data?.success || !data.card) {
-      throw new Error(data?.error ?? 'Could not create your free card');
+      throw new FunctionRequestError(
+        classifyFunctionFailure({
+          status: 200,
+          body: data,
+          fallbackMessage: 'Could not create your free card',
+        }),
+      );
     }
 
     return {
@@ -356,9 +362,15 @@ export const deleteManagedCard = async (token: string): Promise<boolean> => {
       body: { token, action: 'delete' },
     });
 
-    if (error) throw new Error(await readFunctionError(error));
+    if (error) throw new FunctionRequestError(await readFunctionFailure(error, data));
     if (!data?.success || !data.deleted) {
-      throw new Error(data?.error ?? 'Could not delete the card.');
+      throw new FunctionRequestError(
+        classifyFunctionFailure({
+          status: 200,
+          body: data,
+          fallbackMessage: 'Could not delete the card.',
+        }),
+      );
     }
     return true;
   }

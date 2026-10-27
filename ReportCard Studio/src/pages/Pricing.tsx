@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, Sparkles, Crown, GraduationCap } from 'lucide-react';
 import clsx from 'clsx';
-import { STUDIO_PLANS, FREE_USE_LIMIT } from '../config/plans';
+import { STUDIO_PLANS, FREE_USE_LIMIT, type StudioPlan } from '../config/plans';
+import { fetchLivePlans } from '../services/planPricing';
 import { useEntitlement } from '../store/entitlementStore';
 
 const PLAN_ICONS: Record<string, typeof Sparkles> = {
@@ -15,6 +16,18 @@ export default function Pricing() {
   const navigate = useNavigate();
   const { account, planActive, planId } = useEntitlement();
   const [currency, setCurrency] = useState<'INR' | 'USD'>('INR');
+  /* Prices come from the server (studio_plan_prices); the bundle is the fallback. */
+  const [plans, setPlans] = useState<StudioPlan[]>(STUDIO_PLANS);
+
+  useEffect(() => {
+    let active = true;
+    void fetchLivePlans().then((live) => {
+      if (active) setPlans(live);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -45,14 +58,14 @@ export default function Pricing() {
       {account && planActive && (
         <div className="card border-brand-300 bg-brand-50">
           <div className="card-body text-sm text-brand-800">
-            You're on the <strong>{STUDIO_PLANS.find((p) => p.id === planId)?.name ?? 'Studio'}</strong>{' '}
+            You're on the <strong>{plans.find((p) => p.id === planId)?.name ?? 'Studio'}</strong>{' '}
             plan — unlimited report cards. Manage it from your account.
           </div>
         </div>
       )}
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {STUDIO_PLANS.map((plan) => {
+        {plans.map((plan) => {
           const Icon = PLAN_ICONS[plan.id] ?? Sparkles;
           const price = currency === 'INR' ? plan.priceInr : plan.priceUsd;
           const symbol = currency === 'INR' ? '\u20b9' : '$';
@@ -121,8 +134,8 @@ export default function Pricing() {
       </section>
 
       <p className="text-xs text-ink-500 text-center">
-        Prices are set by Ishmaverse. All plans are billed for {STUDIO_PLANS[0].durationMonths} months.
-        You can keep using the {FREE_USE_LIMIT} free generations before subscribing.
+        Prices are set by Ishmaverse (this page shows the live server prices). Each plan shows its own
+        billing period. You can keep using the {FREE_USE_LIMIT} free generations before subscribing.
       </p>
     </div>
   );

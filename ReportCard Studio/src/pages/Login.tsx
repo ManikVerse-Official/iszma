@@ -1,9 +1,42 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { LogIn, ShieldCheck, ArrowRight, LogOut, Crown, Sparkles, RefreshCw } from 'lucide-react';
+import {
+  LogIn,
+  ShieldCheck,
+  ArrowRight,
+  LogOut,
+  Crown,
+  Sparkles,
+  RefreshCw,
+  Loader2,
+} from 'lucide-react';
 import clsx from 'clsx';
-import { STUDIO_PLANS, getPlanById, FREE_USE_LIMIT } from '../config/plans';
+import { STUDIO_PLANS, getPlanById, FREE_USE_LIMIT, type StudioPlan } from '../config/plans';
+import { fetchLivePlans } from '../services/planPricing';
+import { createSubscriptionOrder } from '../services/entitlementApi';
 import { useEntitlement } from '../store/entitlementStore';
+
+/** Razorpay's checkout script, loaded on demand. */
+const RAZORPAY_SDK = 'https://checkout.razorpay.com/v1/checkout.js';
+
+const loadRazorpayScript = (): Promise<boolean> =>
+  new Promise((resolve) => {
+    if ((window as { Razorpay?: unknown }).Razorpay) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = RAZORPAY_SDK;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+
+interface RazorpayCallbackResponse {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
 
 /**
  * Sign in and (optionally) subscribe.
@@ -19,7 +52,7 @@ export default function Login() {
   const {
     signIn,
     signOut,
-    activatePlan,
+    registerPaidPlan,
     refreshFromServer,
     account,
     planActive,
@@ -35,16 +68,29 @@ export default function Login() {
   const [name, setName] = useState(account?.name ?? '');
   const [email, setEmail] = useState(account?.email ?? '');
   const [selectedPlan, setSelectedPlan] = useState(requestedPlan ?? STUDIO_PLANS[2].id);
+  /* Live prices from the server; the bundled plans are the fallback. */
+  const [plans, setPlans] = useState<StudioPlan[]>(STUDIO_PLANS);
   const [busy, setBusy] = useState(false);
+  const [busyNote, setBusyNote] = useState('');
   const [error, setError] = useState('');
   const [justSubscribed, setJustSubscribed] = useState(false);
 
-  const activePlan = getPlanById(planId);
+  const activePlan = plans.find((plan) => plan.id === planId);
 
   // Keep the plan status fresh whenever this screen is opened.
   useEffect(() => {
     void refreshFromServer();
   }, [refreshFromServer]);
+
+  useEffect(() => {
+    let active = true;
+    void fetchLivePlans().then((live) => {
+      if (active) setPlans(live);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const submitSignIn = (e: FormEvent) => {
     e.preventDefault();
@@ -57,19 +103,88 @@ export default function Login() {
       return;
     }
     setError('');
+    // Signing in never activates a plan — the chosen plan still has to be paid
+    // for on the next screen (its card is pre-selected).
     signIn(name, email);
-    if (requestedPlan) {
-      activatePlan(requestedPlan);
-      setJustSubscribed(true);
-    }
     navigate(nextPath, { replace: true });
   };
 
-  const subscribe = () => {
+  /**
+   * Subscribe: order → Razorpay checkout → server-verified activation.
+   *
+   * The amount is never sent from the browser: `create-payment-order` prices the
+   * plan from `studio_plan_prices`. The subscription is recorded only from the
+   * checkout callback, and even then only after the server re-verifies the
+   * signature and the captured amount.
+   */
+  const subscribe = async () => {
+    const plan = plans.find((p) => p.id === selectedPlan);
+    if (!plan) return;
+
+    setError('');
+    setJustSubscribed(false);
+
+    if (!(plan.priceInr > 0)) {
+      setError('This plan is not chargeable. Please pick another plan.');
+      return;
+    }
+
     setBusy(true);
-    activatePlan(selectedPlan);
-    setJustSubscribed(true);
-    setBusy(false);
+    setBusyNote('Preparing secure checkout…');
+    try {
+      const order = await createSubscriptionOrder(plan.id, 'INR');
+      if (!order.ok) throw new Error(order.error);
+
+      const { key_id: keyId, order_id: orderId, amount, currency } = order.data;
+      if (!keyId || !orderId) {
+        throw new Error('The payment gateway did not return a usable order.');
+      }
+
+      const ready = await loadRazorpayScript();
+      if (!ready) throw new Error('The Razorpay checkout could not be loaded. Please retry.');
+
+      setBusyNote('Waiting for your payment…');
+      await new Promise<void>((resolve, reject) => {
+        const razorpay = new (
+          window as unknown as {
+            Razorpay: new (options: Record<string, unknown>) => { open: () => void };
+          }
+        ).Razorpay({
+          key: keyId,
+          amount,
+          currency,
+          order_id: orderId,
+          name: 'ReportCard Studio',
+          description: `${plan.name} · ${plan.durationMonths} months`,
+          handler: (response: RazorpayCallbackResponse) => {
+            setBusyNote('Verifying your payment…');
+            void registerPaidPlan(plan.id, {
+              provider: 'razorpay',
+              order_id: response.razorpay_order_id,
+              payment_id: response.razorpay_payment_id,
+              signature: response.razorpay_signature,
+            }).then((result) => {
+              if (result.ok) {
+                setJustSubscribed(true);
+                resolve();
+                return;
+              }
+              reject(new Error(result.error ?? 'The payment could not be verified.'));
+            });
+          },
+          modal: {
+            ondismiss: () => reject(new Error('Checkout was closed before the payment completed.')),
+          },
+          prefill: { name: account?.name ?? '', email: account?.email ?? '' },
+          theme: { color: '#7c3aed' },
+        }).open();
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not complete the payment.');
+    } finally {
+      setBusy(false);
+      setBusyNote('');
+    }
   };
 
   /* ── Signed out: the sign-in form ───────────────────────────────────── */
@@ -189,11 +304,11 @@ export default function Login() {
               {planActive ? 'Change plan' : 'Subscribe for unlimited report cards'}
             </h3>
             <p className="text-sm text-ink-500 mt-1">
-              Each plan runs for {STUDIO_PLANS[0].durationMonths} months. Prices set by Ishmaverse.
+              Each plan shows its own billing period (live server prices). Prices set by Ishmaverse.
             </p>
           </div>
           <div className="card-body space-y-3">
-            {STUDIO_PLANS.map((p) => {
+            {plans.map((p) => {
               const current = planActive && planId === p.id;
               return (
                 <button
@@ -233,27 +348,45 @@ export default function Login() {
 
             <div className="flex flex-col sm:flex-row gap-3 pt-1">
               <button
-                onClick={subscribe}
+                onClick={() => void subscribe()}
                 disabled={busy || (planActive && planId === selectedPlan)}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-brand-600 text-white font-semibold hover:bg-brand-700 disabled:opacity-60"
               >
-                <Sparkles className="h-4 w-4" />
-                {planActive ? 'Switch to this plan' : `Subscribe · ₹${getPlanById(selectedPlan)?.priceInr}`}
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {busy
+                  ? busyNote || 'Working…'
+                  : planActive
+                    ? 'Switch to this plan'
+                    : `Subscribe · ₹${plans.find((p) => p.id === selectedPlan)?.priceInr ?? ''}`}
               </button>
               <button
                 onClick={() => void refreshFromServer()}
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-slate-300 text-ink-700 font-semibold hover:bg-slate-50"
+                disabled={busy}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-slate-300 text-ink-700 font-semibold hover:bg-slate-50 disabled:opacity-60"
                 title="Re-check the plan on the server"
               >
                 <RefreshCw className="h-4 w-4" /> Refresh
               </button>
               <button
                 onClick={() => navigate('/dashboard')}
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-slate-300 text-ink-700 font-semibold hover:bg-slate-50"
+                disabled={busy}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-slate-300 text-ink-700 font-semibold hover:bg-slate-50 disabled:opacity-60"
               >
                 Go to dashboard
               </button>
             </div>
+
+            <p className="text-xs text-ink-500">
+              Paying by UPI, card, net banking or wallet (Razorpay, in ₹). Your plan is activated
+              only after the payment is verified — if the payment does not complete, no plan is
+              granted.
+            </p>
+
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
           </div>
         </div>
       )}

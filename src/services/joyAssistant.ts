@@ -24,6 +24,8 @@ import {
   getSectionGuide,
 } from './joySectionGuides';
 import { mallSections } from '../data/sections';
+import { TIER_LABELS, TIER_OPTIONS, greetingThemes } from '../data/greetingThemes';
+import type { GreetingTheme, GreetingTier } from '../types';
 
 export type JoyLang = 'en' | 'hi';
 export type { JoyGuideStep, JoySectionGuide };
@@ -345,10 +347,41 @@ const HINGLISH_MARKERS = [
 /* Localised built-in replies                                         */
 /* ------------------------------------------------------------------ */
 
-const PRICING_REPLY: JoyText = {
-  en: 'Pricing 💰 — Digital Greetings cards start at ₹47 within India (from $2 elsewhere), and there is a FREE Welcome Card as well. ReportCard Studio plans are ₹369 / ₹578 / ₹859 (6 months each), with the first 7 report generations free. Which one would you like the exact price for?',
-  hi: 'Pricing 💰 — Digital Greetings ke animated cards ₹47 se shuru hote hain (India; bahar ke liye $2+), aur ek FREE Welcome Card bhi hai. ReportCard Studio ke plans ₹369 / ₹578 / ₹859 (6 months) hain, pehli 7 report generations free. Kis cheez ka exact price chahiye?',
-};
+/**
+ * The four greeting-card tiers and their current prices, read from the same
+ * product data the storefront uses. Joy therefore answers with real catalogue
+ * values instead of a hard-coded "starts at" line that drifts when an admin
+ * changes a price.
+ */
+export interface GreetingTierPrice {
+  tier: GreetingTier;
+  label: string;
+  price: number;
+  priceUsd: number;
+  themeCount: number;
+}
+
+export const getGreetingTierPrices = (
+  source: Pick<GreetingTheme, 'tier' | 'price' | 'price_usd'>[] = greetingThemes,
+): GreetingTierPrice[] =>
+  TIER_OPTIONS.map((tier) => {
+    const themes = source.filter((theme) => theme.tier === tier && theme.price > 0);
+    return {
+      tier,
+      label: TIER_LABELS[tier],
+      price: themes[0]?.price ?? 0,
+      priceUsd: themes[0]?.price_usd ?? 0,
+      themeCount: themes.length,
+    };
+  });
+
+const greetingTierLine = (prices: GreetingTierPrice[] = getGreetingTierPrices()): string =>
+  prices.map((tier) => `${tier.label} ₹${tier.price}`).join(' · ');
+
+const pricingReply = (prices?: GreetingTierPrice[]): JoyText => ({
+  en: `Pricing 💰 — Digital Greetings has four card tiers: ${greetingTierLine(prices)} (USD prices are shown outside India), and there is a FREE Welcome Card as well. ReportCard Studio plans are ₹369 / ₹578 / ₹859 (6 months each), with the first 7 report generations free. Which one would you like the exact price for?`,
+  hi: `Pricing 💰 — Digital Greetings me chaar card tiers hain: ${greetingTierLine(prices)} (India ke bahar USD prices dikhte hain), aur ek FREE Welcome Card bhi hai. ReportCard Studio ke plans ₹369 / ₹578 / ₹859 (6 months) hain, pehli 7 report generations free. Kis cheez ka exact price chahiye?`,
+});
 
 /*
  * Built from the section list itself, so this can never drift out of date: the
@@ -444,6 +477,19 @@ const typoBudget = (word: string): number =>
   word.length >= 9 ? 2 : word.length >= 5 ? 1 : 0;
 
 /**
+ * True when `typed` is just `expected` with a one- or two-letter affix.
+ *
+ * That is the same word, not a misspelling. Without this guard the exact word
+ * "card" would "typo-match" the keyword "ecard" and wrongly outrank a more
+ * specific answer (e.g. "elite card" → the tiers FAQ).
+ */
+const affixOnly = (typed: string, expected: string): boolean => {
+  if (typed.length < 3 || typed.length >= expected.length) return false;
+  if (expected.length - typed.length > 2) return false;
+  return expected.startsWith(typed) || expected.endsWith(typed);
+};
+
+/**
  * Typo-tolerant keyword search, used only after the exact matcher misses.
  *
  * This is what lets Joy understand "reprot card kaha hai", "greeeting price" or
@@ -463,6 +509,10 @@ export const fuzzyKeywordMatch = (tokens: string[], keywords: string[]): string 
         const typed = tokens[start + offset];
         const expected = parts[offset];
         if (typed === expected) continue;
+        if (affixOnly(typed, expected)) {
+          usable = false;
+          break;
+        }
         const budget = typoBudget(expected);
         const d = editDistance(typed, expected);
         if (budget === 0 || d > budget) {
@@ -804,7 +854,12 @@ export const resolveAdminAccess = (raw: string, lang: JoyLang = 'en'): {
  * `lang` controls which language the reply is written in (default English).
  * Returns `null` when the message is unrelated (the caller then falls back).
  */
-export const resolveJoyQuery = (raw: string, lang: JoyLang = 'en'): JoyResolution | null => {
+export const resolveJoyQuery = (
+  raw: string,
+  lang: JoyLang = 'en',
+  /** Live tier prices from the catalogue; falls back to the seeded product data. */
+  greetingTierPrices?: GreetingTierPrice[],
+): JoyResolution | null => {
   const text = normalize(raw);
   if (!text) return null;
 
@@ -847,8 +902,8 @@ export const resolveJoyQuery = (raw: string, lang: JoyLang = 'en'): JoyResolutio
     const reply = wantsPrice
       ? `${base}\n\n${pick(
           {
-            en: 'For reference: cards start at ₹47 and ReportCard plans at ₹369, with the first 7 generations free.',
-            hi: 'Reference ke liye: cards ₹47 se aur ReportCard plans ₹369 se, pehli 7 generations free.',
+            en: `For reference: greeting card tiers are ${greetingTierLine(greetingTierPrices)}, and ReportCard plans start at ₹369, with the first 7 generations free.`,
+            hi: `Reference ke liye: greeting card tiers ${greetingTierLine(greetingTierPrices)} hain, aur ReportCard plans ₹369 se, pehli 7 generations free.`,
           },
           lang,
         )}`
@@ -870,7 +925,7 @@ export const resolveJoyQuery = (raw: string, lang: JoyLang = 'en'): JoyResolutio
    */
   if (faqHit) return { kind: 'help', reply: pick(JOY_FAQ[faqHit.index].reply, lang) };
 
-  if (wantsPrice) return { kind: 'pricing', reply: pick(PRICING_REPLY, lang) };
+  if (wantsPrice) return { kind: 'pricing', reply: pick(pricingReply(greetingTierPrices), lang) };
   if (bankHit(text, tokens, HELP_RE, HELP_WORDS) || (wantsWhere && wantsOpen)) {
     return { kind: 'help', reply: pick(HELP_REPLY, lang) };
   }

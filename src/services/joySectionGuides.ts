@@ -10,6 +10,29 @@
  */
 
 import type { JoyText } from './joyAssistant';
+import { TIER_LABELS, TIER_OPTIONS, greetingThemes } from '../data/greetingThemes';
+import { mallSections } from '../data/sections';
+
+/** Real tier prices from the catalogue, so the FAQ cannot drift from the data. */
+const TIER_PRICE_LINE = TIER_OPTIONS.map((tier) => {
+  const theme = greetingThemes.find((entry) => entry.tier === tier && entry.price > 0);
+  return `${TIER_LABELS[tier]} ₹${theme?.price ?? 0}`;
+}).join(' · ');
+
+/*
+ * The mall's own section list, used by the "what is Ishmaverse" answer. It is
+ * derived from data/sections.ts here (rather than imported from joyAssistant)
+ * so the two modules keep only the one import direction and a new or launched
+ * section can never be missing from that answer.
+ */
+const LIVE_SECTION_LINE = mallSections
+  .filter((section) => section.available)
+  .map((section) => section.name)
+  .join(', ');
+const COMING_SOON_LINE = mallSections
+  .filter((section) => !section.available)
+  .map((section) => section.name)
+  .join(', ');
 
 export interface JoyGuideStep {
   title: JoyText;
@@ -206,6 +229,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'teen balls', 'nine point board', '9 point board', 'how do i play pair',
       'how to play pair', 'pair 3 balls rules', 'pair3balls rules', 'pair 3 balls kaise',
       'pair3balls kaise', 'pair 3 balls khelte', 'game zone', 'pair 3 ball khelte',
+      'who starts first', 'who starts', 'who goes first', 'first move', 'who plays first',
+      'kaun pehle', 'pehla turn', 'pehle kaun khelta',
     ],
     reply: {
       en: 'Pair-3Balls 🎮 — the board has NINE points: four corners, four side midpoints and one centre, joined by straight lines (eight lines of three: across, down and two diagonals through the centre). Each player has three pieces. First you PLACE them, one per turn, on empty points (White starts). When all six are placed you MOVE, taking turns to step one of your own pieces to an empty point joined to it by a line. Pieces are never captured. The first player to line up three of their own pieces on a drawn line wins, and each turn has a 60-second timer — run out and you lose. There is no draw.',
@@ -248,7 +273,9 @@ export const JOY_FAQ: JoyFaqEntry[] = [
     keywords: [
       'world match', 'private room', 'room code', 'invite link', 'play with a friend',
       'play with friend', 'friend ke saath', 'random player', 'matchmaking', 'join a room',
-      'room kaise', 'online khel', 'dost ke saath khel',
+      'room kaise', 'online khel', 'dost ke saath khel', 'online opponent', 'opponent se khel',
+      'online match', 'real player', 'asli player', 'world match kaise', 'online khelna',
+      'kisi ke saath khel', 'dusre player',
     ],
     reply: {
       en: '🎮 Game Zone has exactly three modes. Play vs Computer: choose Easy, Medium or Hard and play on this device. Private Room: create a room to get a 6-character code and an invite link — send either to a friend, and whoever joins plays you in that same room. World Match: you join a queue and get paired with a real player who is searching at that moment. All three use the same board, the same rules and the same 60-second turn timer.',
@@ -268,8 +295,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'free mein difference', 'paid me kya', 'free aur paid', 'kaunsa paid', 'what does paid give',
     ],
     reply: {
-      en: 'Free vs paid 💌 — the FREE Welcome Card is one fixed design and keeps your names, message and photo. Paid themes (₹47 and up, from $2 outside India) add the full theme library (birthday, wedding, Diwali, farewell…), a bigger font choice, custom text & background colours, and — on Premium and Elite — background music or your own MP3. Everything stays live for 48 hours either way.',
-      hi: 'Free vs paid 💌 — FREE Welcome Card ka ek hi fixed design hai, jisme aapke naam, message aur photo lagte hain. Paid themes (₹47 se, India ke bahar $2 se) me poori theme library (birthday, wedding, Diwali, farewell…), zyada font options, custom text aur background colours, aur Premium/Elite me background music ya aapka khud ka MP3 milta hai. Dono hi 48 ghante live rehte hain.',
+      en: `Free vs paid 💌 — the FREE Welcome Card is one fixed design and keeps your names, message and photo. Paid themes (current catalogue: ${TIER_PRICE_LINE}; the USD price shows outside India) add the full theme library (birthday, wedding, Diwali, farewell…), a bigger font choice, custom text & background colours, and — on Premium and Elite — background music or your own MP3. Everything stays live for 48 hours either way.`,
+      hi: `Free vs paid 💌 — FREE Welcome Card ka ek hi fixed design hai, jisme aapke naam, message aur photo lagte hain. Paid themes (current catalogue: ${TIER_PRICE_LINE}; India ke bahar USD price dikhta hai) me poori theme library (birthday, wedding, Diwali, farewell…), zyada font options, custom text aur background colours, aur Premium/Elite me background music ya aapka khud ka MP3 milta hai. Dono hi 48 ghante live rehte hain.`,
     },
   },
   {
@@ -285,11 +312,14 @@ export const JOY_FAQ: JoyFaqEntry[] = [
   {
     keywords: [
       'cannot find my card', 'lost link', 'link lost', 'link kho', 'card kaha gaya', 'manage link',
-      'delete card', 'card delete', 'remove card', 'card hata', 'edit card', 'card change',
+      'delete card', 'card delete', 'remove card', 'card hata', 'edit card', 'edit my card',
+      'edit a card', 'change a card', 'card change', 'card edit', 'card link not opening',
+      'link is not opening', 'link not working',
+      'card not opening', 'link nahi khul', 'card nahi khul', 'link kaam nahi',
     ],
     reply: {
-      en: 'Managing a card 🔗 — the bill email you receive contains a private manage/delete link (and the card’s own share link). Use it to open, re-share or delete the card. If you lost the email, tell me the email address you used and I’ll pass it to the team.',
-      hi: 'Card manage karna 🔗 — aapko milne wala bill email ek private manage/delete link (aur card ka share link) ke saath aata hai. Usi se card khol sakte ho, dobara share kar sakte ho ya delete kar sakte ho. Email kho gaya ho to mujhe woh email address bata do, main team ko de dungi.',
+      en: 'Managing a card 🔗 — the bill email you receive contains a private manage link plus the card’s share link. The manage link opens the card and can delete it permanently (deleting cannot be undone); to send the card again, re-share the share link itself. A card cannot be edited after it is created — its design, names, message and photo are fixed, so make a new card for a change. If the link will not open, the 48 hours are usually over or the card was deleted; if the email is lost, tell me the email address you used and the payment id and I’ll pass it to the team.',
+      hi: 'Card manage karna 🔗 — aapko milne wala bill email ek private manage link aur card ka share link dono deta hai. Manage link se card khulta hai aur use permanently delete kar sakte ho (delete undo nahi hota); dobara bhejna ho to share link hi re-share karo. Card ban jaane ke baad edit nahi hota — design, naam, message aur photo fix ho jaate hain, isliye badlaav ke liye naya card banao. Link na khule to aksar 48 ghante poore ho gaye hote hain ya card delete ho gaya hota hai; email kho gaya ho to mujhe email address aur payment id bata do, main team ko de dungi.',
     },
   },
   {
@@ -299,8 +329,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'text colour', 'customise', 'customize', 'design change',
     ],
     reply: {
-      en: 'Card tiers ✨ — Basic is clean and simple. Premium adds richer animation, ornaments and stock background music. Elite adds the deepest gradients and lets you upload your own song (.mp3). Fonts, text colours and background colours are adjustable on the paid themes; the free Welcome Card keeps its designed look.',
-      hi: 'Card tiers ✨ — Basic simple aur clean hai. Premium me rich animation, ornaments aur stock background music milta hai. Elite me sabse gehre gradients aur aap apna gaana (.mp3) upload kar sakte ho. Font, text colours aur background colours paid themes par adjust hote hain; free Welcome Card apne design me hi rehta hai.',
+      en: `Card tiers ✨ — there are four: ${TIER_PRICE_LINE} (current catalogue prices, INR). Basic is clean and simple. Plus adds richer motion. Premium adds ornaments and stock background music. Elite adds the deepest gradients and lets you upload your own song (.mp3). Fonts, text colours and background colours are adjustable on the paid themes; the free Welcome Card keeps its designed look.`,
+      hi: `Card tiers ✨ — chaar hain: ${TIER_PRICE_LINE} (catalogue ke current INR prices). Basic simple aur clean hai. Plus me richer motion milta hai. Premium me ornaments aur stock background music. Elite me sabse gehre gradients aur aap apna gaana (.mp3) upload kar sakte ho. Font, text colours aur background colours paid themes par adjust hote hain; free Welcome Card apne design me hi rehta hai.`,
     },
   },
   {
@@ -340,8 +370,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'language', 'hindi', 'english', 'bhasha',
     ],
     reply: {
-      en: 'Prices are shown in ₹ (INR) inside India and in $ (USD) elsewhere, using your region. Cards cost ₹47 and up (from $2 outside India); ReportCard Studio plans are ₹369 / ₹578 / ₹859 for six months. I can talk to you in English or Hinglish — just write in whichever you prefer.',
-      hi: 'Price India me ₹ (INR) me aur bahar $ (USD) me dikhte hain, aapke region ke hisaab se. Cards ₹47 se (India ke bahar $2 se) aur ReportCard Studio plans ₹369 / ₹578 / ₹859 (6 mahine). Main English ya Hinglish dono me baat kar sakti hoon — aap jis bhasha me likho, wahi use karungi.',
+      en: `Prices are shown in ₹ (INR) inside India and in $ (USD) elsewhere, using your region — the USD price is the dollar amount listed on the same item, so nothing is re-converted at checkout. Greeting card tiers are ${TIER_PRICE_LINE}; ReportCard Studio plans are ₹369 / ₹578 / ₹859 ($4.99 / $6.99 / $10.99) for six months. I can talk to you in English or Hinglish — just write in whichever you prefer.`,
+      hi: `Price India me ₹ (INR) me aur bahar $ (USD) me dikhte hain, aapke region ke hisaab se — USD price usi item par likha dollar amount hota hai, checkout par koi re-conversion nahi hota. Greeting card tiers ${TIER_PRICE_LINE} hain; ReportCard Studio plans ₹369 / ₹578 / ₹859 ($4.99 / $6.99 / $10.99) me 6 mahine ke liye. Main English ya Hinglish dono me baat kar sakti hoon — aap jis bhasha me likho, wahi use karungi.`,
     },
   },
   {
@@ -407,10 +437,13 @@ export const JOY_FAQ: JoyFaqEntry[] = [
     },
   },
   {
-    keywords: ['plan', 'plans', 'subscription', 'unlimited', 'reportcard plan', 'studio plan'],
+    keywords: [
+      'plan', 'plans', 'subscription', 'unlimited', 'reportcard plan', 'reportcard plans',
+      'report card plan', 'report card plans', 'studio plan', 'studio plans', 'reportcard pricing',
+    ],
     reply: {
-      en: 'ReportCard Studio plans: Simple Academic ₹369, Modern School ₹578, Holistic Progress ₹859 — teeno 6 months ke liye unlimited report cards ke saath. Pehle 7 generations free hain.',
-      hi: 'ReportCard Studio plans: Simple Academic ₹369, Modern School ₹578, Holistic Progress ₹859 — teeno 6 months ke liye unlimited report cards ke saath. Pehle 7 generations free hain.',
+      en: 'ReportCard Studio plans: Simple Academic ₹369 ($4.99), Modern School ₹578 ($6.99), Holistic Progress ₹859 ($10.99) — all three for 6 months with unlimited report cards, billed in ₹ inside India and in $ outside. The first 7 generations are free on every account, and a bill + receipt email arrives as soon as a plan is activated.',
+      hi: 'ReportCard Studio plans: Simple Academic ₹369 ($4.99), Modern School ₹578 ($6.99), Holistic Progress ₹859 ($10.99) — teeno 6 months ke liye unlimited report cards ke saath, India me ₹ me aur bahar $ me bill hote hain. Har account par pehli 7 generations free hain, aur plan activate hote hi bill + receipt email aa jaati hai.',
     },
   },
   {
@@ -429,6 +462,99 @@ export const JOY_FAQ: JoyFaqEntry[] = [
     reply: {
       en: 'You can see every student’s card in ReportCard Studio → “Report Template” — that is the preview room. On a phone the full A4 card is scaled down to fit the screen, so just scroll down on that screen and the card shows up right under the “Step … of 7” bar (with ‹ › to move between students and a theme selector on top). What you see there is exactly what the PDF will print.',
       hi: 'Har student ka card ReportCard Studio ke “Report Template” me dikhta hai — wahi preview room hai. Phone par poora A4 card screen ke hisaab se chhota (scaled) ho jaata hai, isliye us screen par neeche scroll karo — card “Step … of 7” bar ke thik neeche dikh jaayega (students badalne ke liye ‹ › aur upar theme selector). Jo wahan dikhta hai, bilkul wahi PDF me print hota hai.',
+    },
+  },
+  {
+    keywords: [
+      'order history', 'my orders', 'purchase history', 'past orders', 'order list',
+      'orders kaha', 'order kaha dekhu', 'order track', 'track my order', 'mera order',
+      'receipt kaha', 'invoice kaha', 'previous order',
+    ],
+    reply: {
+      en: 'Order history 📧 — there is no separate “my orders” page on the site. Every paid order gets a bill + receipt email that also carries the private manage link: open it to see the card, or delete it for good (deleting cannot be undone). Search your inbox for “Ishmaverse” (check Spam/Promotions too). If the email is lost, tell me the email address you used and the payment id (it starts with “pay_” or “FREE-”), and I’ll pass it to the team to look up.',
+      hi: 'Order history 📧 — site par alag “my orders” page nahi hai. Har paid order ki bill + receipt email aati hai, jisme private manage link bhi hota hai: usse card dekh sakte ho, ya permanently delete kar sakte ho (delete undo nahi hota). Apne inbox me “Ishmaverse” search karo (Spam/Promotions bhi dekh lo). Email kho gaya ho to mujhe woh email address aur payment id (“pay_” ya “FREE-” se shuru) bata do — main team ko lookup ke liye de dungi.',
+    },
+  },
+  {
+    keywords: [
+      'coupon', 'coupon code', 'promo', 'promo code', 'discount', 'discount code', 'offer',
+      'offers', 'sale', 'koi offer', 'koi coupon', 'chhoot', 'deal',
+    ],
+    reply: {
+      en: 'There are no coupon codes or seasonal discounts running right now. 🎁 What is always free: the FREE Welcome Card you can send again and again, and the first 7 report generations in ReportCard Studio. Every other price is the live catalogue price — you can see it on the theme tile before paying, and nothing is added at checkout.',
+      hi: 'Abhi koi coupon code ya seasonal discount chal nahi raha. 🎁 Jo hamesha free hai: FREE Welcome Card (baar baar bhej sakte ho) aur ReportCard Studio ki pehli 7 report generations. Baaki har price live catalogue ka price hai — payment se pehle theme tile par dikhta hai, aur checkout par kuch extra nahi judta.',
+    },
+  },
+  {
+    keywords: [
+      'privacy', 'privacy policy', 'data safe', 'safe hai', 'personal data', 'my data',
+      'data delete', 'delete my data', 'terms', 'terms and conditions', 'policy', 'kya data',
+      'mera data', 'data kaise store',
+    ],
+    reply: {
+      en: 'Privacy 🔒 — you sign in with just a name and email (no password, no OTP). Payments run on the gateway (Razorpay inside India, PayPal/Stripe outside), so we never see or store your card details. Card photos and audio are hosted only while the card is live and are deleted automatically with it after 48 hours. Your email is used for receipts, card links and plan reminders, nothing else. To have your data removed, tell me the email you used and I’ll pass the request to the team.',
+      hi: 'Privacy 🔒 — sign in sirf naam aur email se hota hai (na password, na OTP). Payment gateway par hoti hai (India me Razorpay, bahar PayPal/Stripe), isliye aapke card details hum kabhi dekhte ya store nahi karte. Card ki photo aur audio sirf tab tak host hoti hai jab tak card live hai — 48 ghante baad card ke saath apne aap delete ho jaati hai. Aapka email sirf receipt, card link aur plan reminder ke liye use hota hai, aur kisi aur kaam ke liye nahi. Data hataana ho to mujhe woh email bata do, main request team ko de dungi.',
+    },
+  },
+  /*
+   * "What is this place?" — the whole mall in one answer. Both lists are built
+   * from data/sections.ts, so a section added or launched later can never be
+   * missing from Joy's description of Ishmaverse.
+   */
+  {
+    keywords: [
+      'ishmaverse', 'about ishmaverse', 'what is ishmaverse', 'ishmaverse kya',
+      'ishmaverse ke baare', 'ishmaverse ke bare', 'ishmaverse about', 'tell me about ishmaverse',
+      'what is this site', 'what is this website', 'what is this place', 'this site kya',
+      'ye site kya', 'ye website kya', 'is site par', 'what can i do here', 'what can i buy here',
+      'what do you sell', 'what do you have', 'kya bechte', 'kya kya milta', 'yahan kya kya hai',
+      'mall me kya', 'mall kya hai', 'digital mall', 'online mall', 'ishmaverse par kya',
+    ],
+    reply: {
+      en: `Ishmaverse is a digital mall — one place for digital products instead of one shop. Live right now: ${LIVE_SECTION_LINE} — animated greeting cards that stay live for 48 hours (a FREE Welcome Card plus paid tiers at ${TIER_PRICE_LINE}), print-ready report cards generated from an Excel mark sheet (first 7 generations free, then ₹369 / ₹578 / ₹859 for six months), and Game Zone with Pair-3Balls (vs Computer offline, a Private Room code, or a World Match). Coming soon: ${COMING_SOON_LINE}. Prices show in ₹ inside India and in $ elsewhere; payment runs on Razorpay (UPI, cards, netbanking) inside India and PayPal/Stripe outside, and we never store your card details. Ask me about any section, price or problem and I will answer or take you straight there.`,
+      hi: `Ishmaverse ek digital mall hai — ek hi jagah par digital products, alag-alag dukaanon me bhatakne ki zaroorat nahi. Abhi live: ${LIVE_SECTION_LINE} — animated greeting cards jo 48 ghante live rehte hain (FREE Welcome Card ke saath, paid tiers ${TIER_PRICE_LINE}), Excel mark sheet se print-ready report cards (pehli 7 generations free, uske baad ₹369 / ₹578 / ₹859 me 6 mahine) aur Game Zone me Pair-3Balls (Computer ke saath offline, Private Room code, ya World Match). Coming soon: ${COMING_SOON_LINE}. Price India me ₹ me aur bahar $ me dikhte hain; payment India me Razorpay (UPI, cards, netbanking) aur bahar PayPal/Stripe se hoti hai, aur aapke card details hum store nahi karte. Kisi bhi section, price ya problem ke baare me poochho — main jawab doongi ya seedha wahan le chalti hoon.`,
+    },
+  },
+  /*
+   * Game Zone availability. The online modes genuinely need the backend, and an
+   * admin can switch the game off or put it in maintenance, so Joy explains the
+   * real behaviour instead of promising a game that will not open.
+   */
+  {
+    keywords: [
+      'game not working', 'game is not working', 'game not opening', 'game nahi chal',
+      'game nahi khul', 'online game not working', 'online modes not available',
+      'online khel nahi', 'online mode band', 'maintenance', 'maintenance mode',
+      'game band', 'game band hai', 'game off', 'game down', 'server down',
+      'offline game', 'game offline', 'internet nahi', 'no internet', 'without internet',
+      'without connection', 'no connection', 'work offline', 'works offline', 'play offline',
+      'game work offline', 'game works offline', 'offline khel',
+      'online unavailable', 'why is the game not', 'game kyu nahi',
+    ],
+    reply: {
+      en: '🎮 Pair-3Balls has one mode that never needs a connection — “Play vs Computer” runs entirely on your device. Private Room and World Match are online, so they only work when the site’s backend is reachable; if it is not, or if an admin has switched the game off or set maintenance mode, the Game Zone says the online modes are unavailable instead of failing silently. If vs Computer also will not open, reload the page once; if it still does not, tell me and I will pass it to the team.',
+      hi: '🎮 Pair-3Balls ka ek mode connection ke bina bhi chalta hai — “Play vs Computer” poori tarah aapke device par chalta hai. Private Room aur World Match online hain, isliye ye tabhi chalte hain jab site ka backend reachable ho; agar nahi hai, ya admin ne game band kar diya ho ya maintenance mode laga diya ho, to Game Zone saaf likh deta hai ki online modes available nahi hain — chupchaap fail nahi hota. Agar Computer ke saath bhi na khule, ek baar page reload karo; phir bhi na chale to batao, main team ko de dungi.',
+    },
+  },
+  {
+    keywords: [
+      'leaderboard', 'leader board', 'ranking', 'rankings', 'high score', 'highscore',
+      'scores', 'scoreboard', 'top players', 'tournament', 'rank', 'points table',
+    ],
+    reply: {
+      en: '🏆 There is no leaderboard, ranking or tournament ladder in Pair-3Balls — each game is played for itself, and the result is just win or lose (or a loss on the 60-second timer; there are no draws). Nothing is publicly ranked, and your games are not posted anywhere.',
+      hi: '🏆 Pair-3Balls me koi leaderboard, ranking ya tournament ladder nahi hai — har game apne aap ke liye khela jaata hai aur result sirf jeet ya haar hota hai (ya 60-second timer khatam hone par haar; draw nahi hota). Kuch bhi publicly rank nahi hota aur aapke games kahin post nahi hote.',
+    },
+  },
+  {
+    keywords: [
+      'is there an app', 'mobile app', 'android app', 'ios app', 'play store', 'app store',
+      'download the app', 'download app', 'apk', 'install the app', 'install app', 'app kab',
+      'app hai kya', 'application', 'pwa', 'add to home screen', 'home screen par',
+    ],
+    reply: {
+      en: '📱 Ishmaverse runs in the browser — there is no separate Play Store / App Store download to hunt for. On a phone you can open the site and use your browser’s “Add to Home screen” option to get an app-like icon that opens full-screen, and the site keeps working offline for the parts already loaded (the vs-Computer game works without a connection). ReportCard Studio is built into the same site under /reportcard.',
+      hi: '📱 Ishmaverse browser me chalta hai — Play Store / App Store par alag download nahi hai. Phone par site kholiye aur browser ke “Add to Home screen” option se app-jaisa icon bana lijiye jo full-screen khulta hai, aur jo hissa load ho chuka hai wo offline bhi chalta rehta hai (Computer ke saath game bina internet chalta hai). ReportCard Studio usi site ke andar /reportcard par hai.',
     },
   },
 ];

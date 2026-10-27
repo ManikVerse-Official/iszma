@@ -317,10 +317,10 @@ export const SCREEN_GUIDES: Record<StudioScreen, ScreenGuide> = {
         },
       },
       {
-        title: { en: 'Subscribe in two clicks', hi: 'Do click me subscribe' },
+        title: { en: 'Subscribe with a secure payment', hi: 'Secure payment ke saath subscribe' },
         detail: {
-          en: '"Subscribe" dabao → sign in (naam + email) → plan activate aur bill aapke email par aa jaata hai. Receipt bhi wahi se milti hai.',
-          hi: '"Subscribe" dabao → sign in (naam + email) → plan activate, aur bill aapke email par aa jaata hai. Receipt bhi wahin se milti hai.',
+          en: '"Subscribe" dabao → sign in (naam + email) → Razorpay se payment karo → payment verify hone ke baad hi plan activate hota hai, aur bill aapke email par aa jaata hai. Receipt bhi wahi se milti hai.',
+          hi: '"Subscribe" dabao → sign in (naam + email) → Razorpay se payment karo → payment verify hone ke baad hi plan activate hota hai, aur bill aapke email par aa jaata hai. Receipt bhi wahin se milti hai.',
         },
       },
     ],

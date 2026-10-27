@@ -1,4 +1,9 @@
-import { invokeFunction, isSupabaseConfigured } from './supabase';
+import {
+  invokeFunction,
+  invokeFunctionResult,
+  isSupabaseConfigured,
+  type FunctionResult,
+} from './supabase';
 
 /**
  * Server-side entitlement calls for ReportCard Studio.
@@ -72,18 +77,105 @@ export const consumeServerUse = async (
   };
 };
 
+/** Gateway proof the server re-verifies before it activates a paid plan. */
+export interface PaymentProof {
+  provider: 'razorpay' | 'paypal';
+  order_id: string;
+  payment_id: string;
+  /** Razorpay only: HMAC signature from the checkout callback. */
+  signature?: string;
+}
+
+/** A gateway order the browser hands to its checkout SDK. */
+export interface SubscriptionOrder {
+  provider: 'razorpay' | 'paypal' | 'stripe';
+  /** Razorpay public key (INR orders). */
+  key_id?: string;
+  order_id?: string;
+  session_id?: string;
+  url?: string;
+  /** Razorpay amounts are in paise; other providers use major units. */
+  amount: number;
+  currency: string;
+  plan_id: string;
+}
+
+type OrderResponse = SubscriptionOrder & { success?: boolean };
+
+/**
+ * Asks the server for a gateway order for a subscription plan.
+ *
+ * The browser never sends an amount: `create-payment-order` prices the plan from
+ * `studio_plan_prices`. A failure keeps the server's own message (unpaid plan,
+ * missing gateway keys, …) so the UI can report it instead of pretending the
+ * subscription worked.
+ */
+export const createSubscriptionOrder = async (
+  planId: string,
+  currency: 'INR' | 'USD' = 'INR',
+  provider?: 'paypal' | 'stripe',
+): Promise<FunctionResult<SubscriptionOrder>> => {
+  if (!isSupabaseConfigured()) {
+    return {
+      ok: false,
+      status: 0,
+      code: 'NOT_CONFIGURED',
+      error: 'Payments are unavailable in this build.',
+    };
+  }
+  const result = await invokeFunctionResult<OrderResponse>('create-payment-order', {
+    plan_id: planId,
+    currency,
+    provider,
+  });
+  if (!result.ok) return result;
+  if (!result.data?.success) {
+    return {
+      ok: false,
+      status: 200,
+      code: 'ORDER_FAILED',
+      error: 'Could not start the payment. Please try again.',
+    };
+  }
+  return { ok: true, data: result.data };
+};
+
+/**
+ * Records a subscription on the server.
+ *
+ * A paid plan is only activated when `payment` carries gateway proof that
+ * `entitlement` verifies (signature + captured amount + replay guard). Without
+ * it the server answers 402 and no plan is granted.
+ */
 export const subscribeOnServer = async (
   email: string,
   planId: string,
   name?: string,
-): Promise<ServerEntitlement | null> => {
-  if (!isSupabaseConfigured() || !email) return null;
-  const data = await invokeFunction<StateResponse>('entitlement', {
+  payment?: PaymentProof,
+): Promise<FunctionResult<ServerEntitlement>> => {
+  if (!isSupabaseConfigured() || !email) {
+    return {
+      ok: false,
+      status: 0,
+      code: 'NOT_CONFIGURED',
+      error: 'The Studio server is not configured in this build.',
+    };
+  }
+  const result = await invokeFunctionResult<StateResponse>('entitlement', {
     action: 'subscribe',
     email,
     planId,
     name,
+    payment,
   });
-  if (!data?.success) return null;
-  return toEntitlement(data, planId);
+  if (!result.ok) return result;
+  if (!result.data?.success) {
+    return {
+      ok: false,
+      status: 200,
+      code: 'SUBSCRIBE_FAILED',
+      error: 'The subscription could not be activated.',
+    };
+  }
+  return { ok: true, data: toEntitlement(result.data, planId) };
 };

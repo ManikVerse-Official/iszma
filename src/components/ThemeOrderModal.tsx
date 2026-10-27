@@ -74,7 +74,7 @@ interface ThemeOrderModalProps {
 }
 
 export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen, onClose }) => {
-  const { isAdmin, customerName, customerEmail, setCustomerName } = useGreeting();
+  const { isAdmin, customerName, customerEmail, setCustomerName, setCustomerEmail } = useGreeting();
 
   const [step, setStep] = useState<Step>('details');
   const [details, setDetails] = useState({ sender: '', receiver: '', message: '' });
@@ -115,7 +115,11 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
   const [receiptNumber, setReceiptNumber] = useState('');
   const [receiptEmailed, setReceiptEmailed] = useState(false);
   const [createError, setCreateError] = useState('');
+  // False for a reached limit: retrying the same request can never succeed.
+  const [createErrorRetryable, setCreateErrorRetryable] = useState(true);
   const [lastPayment, setLastPayment] = useState<PaymentProof | null>(null);
+  // Free cards need an email because the limit is per email address.
+  const [freeEmail, setFreeEmail] = useState('');
   const [now, setNow] = useState(() => new Date());
 
   // Visitor's currency — geo-detected by default, overridable from the navbar.
@@ -178,7 +182,9 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
       setReceiptNumber('');
       setReceiptEmailed(false);
       setCreateError('');
+      setCreateErrorRetryable(true);
       setLastPayment(null);
+      setFreeEmail(customerEmail || '');
       setIsGenerating(false);
     }
   }, [isOpen, theme?.id]);
@@ -194,14 +200,21 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
 
   const remainingMs = expiresAt ? Math.max(0, expiresAt.getTime() - now.getTime()) : 0;
   const displayPrice = checkoutProduct?.price ?? theme.price;
-  // Price 0 marks the free welcome card — it skips the payment flow entirely
-  // and is created through the free-use-limited `create-free-greeting` function.
-  const isFreeTheme = theme.price === 0 && theme.price_usd === 0;
+  /*
+   * A free card is one whose payable amount is 0. Checking the regional price as
+   * well as the INR price means a card can never reach a gateway with a ₹0 / $0
+   * total (which is exactly how a "Pay ₹0 with Razorpay" button appeared).
+   */
+  const isFreeTheme = theme.price === 0 || !(Number(displayPrice) > 0);
+  // Admins generate cards free of charge and must not use up a free-card slot.
+  const usesFreeCardFlow = isFreeTheme && !isAdmin;
+  const isFreeEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(freeEmail.trim());
 
   const isDetailsValid =
     details.sender.trim().length > 0 &&
     details.receiver.trim().length > 0 &&
-    details.message.trim().length > 0;
+    details.message.trim().length > 0 &&
+    (!usesFreeCardFlow || isFreeEmailValid);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -334,6 +347,13 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
     try {
       const imageUrl = imageFile ? await uploadImage(imageFile) : imagePreview || '';
 
+      /*
+       * The free limit is per email, so the free flow collects its own address in
+       * the builder; paid cards use the email typed at checkout.
+       */
+      const buyerEmail = usesFreeCardFlow ? freeEmail.trim() : customerEmail;
+      if (usesFreeCardFlow) setCustomerEmail(buyerEmail);
+
       const cardInput = {
         sender_name: details.sender.trim(),
         receiver_name: details.receiver.trim(),
@@ -352,14 +372,14 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
         signoff: signoff.trim() || undefined,
         audio_track: customAudioTrack || selectedAudioTrack || undefined,
         external_image_url: imageUrl,
-        client_email: customerEmail,
+        client_email: buyerEmail,
       };
 
       // The Edge Function is the authority: it verifies admin status from the
       // session JWT (or the payment with the gateway) before writing the card
       // and its ledger row. The free welcome card instead goes through
       // `create-free-greeting`, which enforces the per-email/per-IP free limit.
-      const { card, transaction } = isFreeTheme
+      const { card, transaction } = usesFreeCardFlow
         ? await createFreeGreetingCard(cardInput)
         : await createGreetingCard({
             ...cardInput,
@@ -392,7 +412,7 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
        * If the buyer left no email, the bill is addressed to the store owner so
        * the record is never lost.
        */
-      void sendPurchaseEmail(customerEmail, {
+      void sendPurchaseEmail(buyerEmail, {
         name: details.sender.trim(),
         productName: `${theme.name} — Digital Greeting Card`,
         amount: isFreeTheme ? '0' : String(displayPrice),
@@ -403,6 +423,7 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
       });
 
       setCreateError('');
+      setCreateErrorRetryable(true);
       setLastPayment(null);
       clearPendingGreeting();
       setStep('done');
@@ -411,6 +432,10 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
       // Keep the payment proof so the sender can retry without paying again.
       // The server is idempotent on payment_id, so a retry after a lost
       // response returns the original card instead of charging twice.
+      //
+      // `retryable` is false for a reached free-card limit: the same request can
+      // never succeed until the 24-hour window passes, so no Retry button.
+      setCreateErrorRetryable((error as { retryable?: boolean })?.retryable !== false);
       setCreateError(
         error instanceof Error ? error.message : 'We could not create your card. Please try again.',
       );
@@ -568,6 +593,39 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
                         className="w-full bg-bg-dark-start border border-neon-purple/30 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-neon-purple transition-colors resize-none"
                       />
                     </div>
+
+                    {/*
+                     * The free card's limit is per email address, so the address has
+                     * to be captured before the card is published. Paid cards collect
+                     * it at checkout instead.
+                     */}
+                    {usesFreeCardFlow && (
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-300 mb-2">
+                          Your email address
+                        </label>
+                        <input
+                          type="email"
+                          value={freeEmail}
+                          onChange={(e) => setFreeEmail(e.target.value)}
+                          placeholder="you@example.com"
+                          className={`w-full bg-bg-dark-start border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none transition-colors ${
+                            freeEmail.trim() && !isFreeEmailValid
+                              ? 'border-red-500/60 focus:border-red-500'
+                              : 'border-neon-purple/30 focus:border-neon-purple'
+                          }`}
+                        />
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          Used only to enforce the free-card limit (one free card per email per
+                          24 hours) and to send your receipt.
+                        </p>
+                        {freeEmail.trim() && !isFreeEmailValid && (
+                          <p className="text-[11px] text-red-300 mt-1">
+                            Enter a valid email address to publish this free card.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/*
                      * Typography, custom wording and text/background colours are
@@ -1092,17 +1150,24 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
                     {createError && (
                       <div className="bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-3 space-y-2">
                         <p className="text-xs text-red-300">{createError}</p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void generateCard(lastPayment ?? undefined).catch(() => {});
-                          }}
-                          disabled={isGenerating}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/50 text-red-200 text-xs font-semibold hover:bg-red-500/30 disabled:opacity-50 transition-all"
-                        >
-                          {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                          {isGenerating ? 'Retrying…' : 'Retry creating card'}
-                        </button>
+                        {createErrorRetryable ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void generateCard(lastPayment ?? undefined).catch(() => {});
+                            }}
+                            disabled={isGenerating}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/50 text-red-200 text-xs font-semibold hover:bg-red-500/30 disabled:opacity-50 transition-all"
+                          >
+                            {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                            {isGenerating ? 'Retrying…' : 'Retry creating card'}
+                          </button>
+                        ) : (
+                          <p className="text-[11px] text-red-200/80">
+                            Retrying this exact request will not help yet — choose a paid card, or
+                            come back after the 24-hour window.
+                          </p>
+                        )}
                       </div>
                     )}
 

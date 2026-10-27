@@ -18,6 +18,7 @@ import { supabase } from '../services/supabase';
 import { isPaymentDemoMode } from '../services/greetingService';
 import { useCurrency } from '../context/CurrencyContext';
 import { clearPendingGreeting, savePendingGreeting, type PendingGreeting } from '../services/pendingCheckout';
+import { FunctionRequestError, readFunctionFailure } from '../services/functionErrors';
 
 interface CheckoutModalProps {
   product: Product | null;
@@ -54,20 +55,6 @@ const INDIA_METHODS = [
   { label: 'Cards', icon: CreditCard },
   { label: 'Wallets', icon: Wallet },
 ];
-
-const readFunctionError = async (error: unknown, data: any): Promise<string> => {
-  const context = (error as { context?: Response })?.context;
-  if (context && typeof context.json === 'function') {
-    try {
-      const body = await context.json();
-      if (body?.error) return String(body.error);
-    } catch {
-      /* ignore */
-    }
-  }
-  if (data?.error) return String(data.error);
-  return error instanceof Error ? error.message : 'Payment could not be started';
-};
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   product,
@@ -137,13 +124,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setPaymentState('success');
   };
 
-  /** Asks the server for a gateway order priced from the trusted price table. */
+  /**
+   * Asks the server for a gateway order priced from the trusted price table.
+   *
+   * The browser sends only the theme id and currency — never an amount. A
+   * failure arrives as a typed error: `PAYMENT_CONFIG` means the owner must fix
+   * the gateway keys, `NETWORK` means the function could not be reached, and a
+   * retryable server error can simply be attempted again.
+   */
   const createServerOrder = async (currency: 'INR' | 'USD', provider?: IntlProvider) => {
     const { data, error } = await supabase.functions.invoke('create-payment-order', {
       body: { theme_id: themeIdFromProduct(product), currency, provider },
     });
     if (error || !data?.success) {
-      throw new Error(await readFunctionError(error, data));
+      throw new FunctionRequestError(await readFunctionFailure(error, data));
     }
     return data as {
       provider: 'razorpay' | 'paypal' | 'stripe';
@@ -171,6 +165,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   const handleRazorpayPayment = async () => {
+    /*
+     * Defence in depth: a ₹0 card must never start a gateway checkout, whatever
+     * price the browser was handed. The server refuses a ₹0 order too.
+     */
+    if (!product || !(Number(product.price) > 0)) {
+      setPaymentError(
+        'This card is free — no payment is required. Close this dialog and publish it from the card builder.',
+      );
+      return;
+    }
+
     setPaymentError('');
     setIsPreparingPayment(true);
 
@@ -220,6 +225,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   /** Stripe hosted checkout: persist the card, create a session, then redirect. */
   const handleStripePayment = async () => {
+    if (!product || !(Number(product.price) > 0)) {
+      setPaymentError('This card is free — no payment is required.');
+      return;
+    }
+
     setPaymentError('');
     setIsPreparingPayment(true);
 
@@ -250,6 +260,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const isGreetingProduct = product.id.startsWith('greeting');
   const isDemo = paymentMode === 'demo';
   const priceLabel = `${product.currency === 'INR' ? '₹' : '$'}${product.price}`;
+  /*
+   * A free card (₹0 / $0) has no gateway step. Treating it as a purchase used to
+   * render a "Pay ₹0 with Razorpay" button that could only fail.
+   */
+  const isZeroPayable = !(Number(product.price) > 0);
   const stripeAvailable = Boolean(onPrepareStripe) && isGreetingProduct;
 
   const missingGateway = isDemo
@@ -345,7 +360,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                 )}
 
-                {isDemo ? (
+                {isZeroPayable ? (
+                  <div className="space-y-3">
+                    <div className="bg-emerald-500/10 border border-emerald-500/40 rounded-xl px-4 py-3 text-xs text-emerald-200 space-y-1">
+                      <p className="font-semibold text-emerald-100">No payment is required for this card.</p>
+                      <p>
+                        This card is free, so it is published directly — no Razorpay or PayPal
+                        checkout is started. Close this dialog and use the publish button.
+                      </p>
+                    </div>
+                    <button
+                      onClick={onClose}
+                      className="w-full bg-bg-dark-end border border-neon-purple rounded-xl px-6 py-4 font-bold text-white hover:border-neon-purple transition-all duration-300"
+                    >
+                      Back to the free card
+                    </button>
+                  </div>
+                ) : isDemo ? (
                   <div className="space-y-3">
                     <div className="bg-yellow-500/10 border border-yellow-500/40 rounded-xl px-4 py-3 text-xs text-yellow-300">
                       Demo mode active — no real money moves. Turn it off by removing

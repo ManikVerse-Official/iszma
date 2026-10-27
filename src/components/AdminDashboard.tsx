@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Home,
   Heart,
@@ -60,6 +60,8 @@ import {
 } from '../services/subscriptions';
 import { SmartImage } from './SmartImage';
 import AdminJoy from './AdminJoy';
+import AdminJoyDock from './admin/AdminJoyDock';
+import { AdminJoySessionProvider } from './admin/useAdminJoyConsole';
 import { AdminGameZone } from './AdminGameZone';
 import {
   ANIMATION_OPTIONS,
@@ -102,6 +104,28 @@ type Tab =
   | 'settings'
   | 'joy'
   | 'game';
+
+/**
+ * Every dashboard tab, used to validate the `?tab=` a link asks for. Admin Joy's
+ * guided answers link to `/admin/dashboard?tab=…`, so an unknown value falls back
+ * to the overview instead of showing a blank panel.
+ */
+const DASHBOARD_TABS: readonly Tab[] = [
+  'overview',
+  'audience',
+  'greetings',
+  'products',
+  'pricing',
+  'transactions',
+  'cards',
+  'subscriptions',
+  'settings',
+  'joy',
+  'game',
+];
+
+const tabFromQuery = (value: string | null): Tab =>
+  DASHBOARD_TABS.includes(value as Tab) ? (value as Tab) : 'overview';
 
 interface ThemeForm {
   name: string;
@@ -255,7 +279,9 @@ export const AdminDashboard: React.FC = () => {
     deleteProduct,
   } = useCatalog();
 
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  /* A guided link (`?tab=greetings`) opens that tab directly. */
+  const [activeTab, setActiveTab] = useState<Tab>(() => tabFromQuery(searchParams.get('tab')));
   const [searchTerm, setSearchTerm] = useState('');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cards, setCards] = useState<AdminCardRow[]>([]);
@@ -355,6 +381,18 @@ export const AdminDashboard: React.FC = () => {
       active = false;
     };
   }, [activeTab, isAdmin, visitsLoaded]);
+
+  /* Keep the URL in step with the visible tab, so a copied link reopens it. */
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (activeTab === 'overview') next.delete('tab');
+    else next.set('tab', activeTab);
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+    // `searchParams` is intentionally read here; the tab is what changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const tabs: { id: Tab; label: string; icon: typeof Home }[] = [
     { id: 'overview', label: 'Overview', icon: Home },
@@ -682,6 +720,7 @@ export const AdminDashboard: React.FC = () => {
   const showSearch = ['greetings', 'products', 'pricing', 'transactions', 'cards'].includes(activeTab);
 
   return (
+    <AdminJoySessionProvider>
     <div className="min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end lg:flex">
       {/* Sidebar */}
       <aside className="lg:w-72 lg:min-h-screen bg-bg-dark-end/60 lg:border-r border-b lg:border-b-0 border-neon-purple/20 lg:flex lg:flex-col">
@@ -1981,7 +2020,16 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </Modal>
       )}
+
+      {/*
+       * Admin Joy everywhere. It is mounted once for the whole dashboard, so the
+       * conversation survives tab changes and there is never a second launcher.
+       * The dedicated Admin Joy tab already shows the full console, so the dock
+       * hides itself there instead of opening a duplicate chat window.
+       */}
+      {activeTab !== 'joy' && <AdminJoyDock onOpenFull={() => setActiveTab('joy')} />}
     </div>
+    </AdminJoySessionProvider>
   );
 };
 

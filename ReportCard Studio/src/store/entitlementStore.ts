@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import { FREE_USE_LIMIT, isAdminEmail, getPlanById } from '../config/plans';
+import { FREE_USE_LIMIT, isAdminEmail } from '../config/plans';
 import {
   consumeServerUse,
   fetchServerEntitlement,
   subscribeOnServer,
+  type PaymentProof,
 } from '../services/entitlementApi';
 import { isSupabaseConfigured } from '../services/supabase';
 
@@ -74,12 +75,6 @@ function persist(state: PersistedEntitlement): void {
   }
 }
 
-function addMonths(date: Date, months: number): Date {
-  const next = new Date(date.getTime());
-  next.setMonth(next.getMonth() + months);
-  return next;
-}
-
 function isPaidActive(state: PersistedEntitlement): boolean {
   if (!state.planId || !state.planExpiresAt) return false;
   if (state.planId === 'admin') return true;
@@ -93,7 +88,16 @@ export interface EntitlementState extends PersistedEntitlement {
 
   signIn: (name: string, email: string) => void;
   signOut: () => void;
-  activatePlan: (planId: string) => void;
+  /**
+   * Records a subscription that the gateway has already charged.
+   *
+   * The plan is only marked active when the server verifies the payment proof
+   * and confirms it; there is deliberately no way to activate a plan locally.
+   */
+  registerPaidPlan: (
+    planId: string,
+    payment: PaymentProof,
+  ) => Promise<{ ok: boolean; error?: string }>;
   consumeUse: () => void;
   canGenerate: () => { allowed: boolean; isFree: boolean; reason?: string };
   /** Pulls the authoritative plan + free uses from the server (no-op offline). */
@@ -123,37 +127,35 @@ export const useEntitlement = create<EntitlementState>((set, get) => ({
     set({ ...next, isAdmin: false });
   },
 
-  activatePlan: (planId) => {
-    const plan = getPlanById(planId);
-    const now = new Date();
-    const expires = addMonths(now, plan?.durationMonths ?? 6);
-    const current = get();
-    const next: PersistedEntitlement = {
-      ...current,
-      planId,
-      planStartedAt: now.toISOString(),
-      planExpiresAt: expires.toISOString(),
-    };
-    persist(next);
-    set({ ...next, planActive: true });
+  registerPaidPlan: async (planId, payment) => {
+    const account = get().account;
+    if (!account?.email) return { ok: false, error: 'Sign in before subscribing.' };
 
-    // Record the subscription server-side (which also sends the bill email).
-    const email = next.account?.email;
-    if (email && isSupabaseConfigured()) {
-      void subscribeOnServer(email, planId, next.account?.name).then((server) => {
-        if (!server) return;
-        set((s) => {
-          const merged: PersistedEntitlement = {
-            ...s,
-            planId: server.planId ?? s.planId,
-            planExpiresAt: server.expiresAt ?? s.planExpiresAt,
-            freeUsesRemaining: server.isAdmin ? s.freeUsesRemaining : s.freeUsesRemaining,
-          };
-          persist(merged);
-          return { ...merged, planActive: true, isAdmin: server.isAdmin || s.isAdmin };
-        });
-      });
+    /*
+     * The server is the only thing that can activate a plan: it verifies the
+     * gateway signature, the captured amount and that the payment has not been
+     * used before. A rejection (e.g. HTTP 402 "Payment is required to activate
+     * this plan") is surfaced instead of being treated as a success.
+     */
+    const result = await subscribeOnServer(account.email, planId, account.name, payment);
+    if (!result.ok) return { ok: false, error: result.error };
+
+    const server = result.data;
+    if (!server.planActive) {
+      return { ok: false, error: 'The payment was not confirmed, so the plan was not activated.' };
     }
+
+    set((s) => {
+      const merged: PersistedEntitlement = {
+        ...s,
+        planId: server.planId ?? planId,
+        planStartedAt: new Date().toISOString(),
+        planExpiresAt: server.expiresAt,
+      };
+      persist(merged);
+      return { ...merged, planActive: true, isAdmin: server.isAdmin || s.isAdmin };
+    });
+    return { ok: true };
   },
 
   consumeUse: () => {
@@ -199,18 +201,24 @@ export const useEntitlement = create<EntitlementState>((set, get) => ({
           server.planActive || server.isAdmin
             ? s.freeUsesRemaining
             : Math.min(FREE_USE_LIMIT, Math.max(0, server.freeRemaining)),
-        planId: server.isAdmin ? 'admin' : server.planActive ? server.planId : s.planId,
+        /*
+         * The server is authoritative: when it reports no active plan, a stale
+         * local `planActive` must be cleared rather than kept alive — otherwise
+         * a persisted local plan could survive an unpaid/expired subscription.
+         */
+        planId: server.isAdmin ? 'admin' : server.planActive ? server.planId : null,
         planExpiresAt: server.isAdmin
           ? '9999-12-31T00:00:00.000Z'
           : server.planActive
             ? server.expiresAt
-            : s.planExpiresAt,
+            : null,
+        planStartedAt: server.planActive || server.isAdmin ? s.planStartedAt : null,
       };
       persist(merged);
       return {
         ...merged,
         isAdmin: server.isAdmin || s.isAdmin,
-        planActive: server.planActive || server.isAdmin || s.planActive,
+        planActive: server.planActive || server.isAdmin,
       };
     });
   },

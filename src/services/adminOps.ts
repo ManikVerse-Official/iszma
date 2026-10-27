@@ -224,11 +224,110 @@ export const createServerAdminOps = (
       return toOpResult(await call({ action: 'theme.delete', targetId: id }));
     },
 
+    /**
+     * A tier price is the price of the existing themes in that tier, so the
+     * transport sends the resolved theme ids — no synthetic product or price
+     * record is created.
+     */
+    async updateTierPrice(input) {
+      const fields: Record<string, number> = {};
+      if (typeof input.priceInr === 'number') fields.price_inr = input.priceInr;
+      if (typeof input.priceUsd === 'number') fields.price_usd = input.priceUsd;
+      return toOpResult(
+        await call({
+          action: 'pricing.tier.update',
+          tier: input.tier,
+          themeIds: input.themeIds,
+          fields,
+        }),
+      );
+    },
+
+    /** Game Zone availability. `sortOrder` maps to the `sort_order` column. */
+    async updateGame(patch) {
+      const fields: Record<string, unknown> = {};
+      if (typeof patch.enabled === 'boolean') fields.enabled = patch.enabled;
+      if (typeof patch.maintenance === 'boolean') fields.maintenance = patch.maintenance;
+      if (typeof patch.sortOrder === 'number') fields.sort_order = patch.sortOrder;
+      return toOpResult(await call({ action: 'game.update', fields }));
+    },
+
+    /** Brand name, tagline and logo stored in `site_settings`. */
+    async updateBrand(patch) {
+      const fields: Record<string, string> = {};
+      if (typeof patch.siteName === 'string' && patch.siteName.trim()) {
+        fields.site_name = patch.siteName.trim();
+      }
+      if (typeof patch.tagline === 'string' && patch.tagline.trim()) {
+        fields.brand_tagline = patch.tagline.trim();
+      }
+      if (typeof patch.logoUrl === 'string' && patch.logoUrl.trim()) {
+        fields.logo_url = patch.logoUrl.trim();
+      }
+      return toOpResult(await call({ action: 'brand.update', fields }));
+    },
+
+    /**
+     * ReportCard Studio plan price / billing duration. The server writes the
+     * `studio_plan_prices` row and verifies it; a plan id that does not exist is
+     * reported as a 404 by the function, never created.
+     */
+    async updatePlanPrice(input) {
+      const fields: Record<string, number> = {};
+      if (typeof input.priceInr === 'number') fields.price_inr = input.priceInr;
+      if (typeof input.priceUsd === 'number') fields.price_usd = input.priceUsd;
+      if (typeof input.durationMonths === 'number') fields.duration_months = input.durationMonths;
+      return toOpResult(
+        await call({ action: 'pricing.plan.update', targetId: input.planId, fields }),
+      );
+    },
+
+    /**
+     * Sends the rule, never the resulting prices: the Edge Function recomputes
+     * and verifies every price against the rows it actually writes.
+     */
+    async bulkUpdatePrices(input) {
+      return toOpResult(
+        await call({
+          action: 'pricing.bulk.update',
+          scope: input.scope,
+          mode: input.mode,
+          value: input.value,
+          currency: input.currency,
+        }),
+      );
+    },
+
     async report(kind) {
       const result = await call({
-        action: kind === 'orders' ? 'report.orders' : 'report.overview',
+        action:
+          kind === 'orders'
+            ? 'report.orders'
+            : kind === 'audit'
+              ? 'report.audit'
+              : 'report.overview',
       });
       if (!result.ok) return { ok: false, error: result.error };
+      if (kind === 'audit') {
+        const entries = result.data.result?.after?.entries;
+        if (Array.isArray(entries)) {
+          const lines = (entries as Record<string, unknown>[])
+            .slice(0, 8)
+            .map((entry) => {
+              const action = String(entry.action ?? 'unknown');
+              const target = entry.target_name ? ` → ${String(entry.target_name)}` : '';
+              const outcome = String(entry.outcome ?? 'unknown');
+              const when = String(entry.created_at ?? '').slice(0, 16).replace('T', ' ');
+              return `• ${when} · ${action}${target} · ${outcome}`;
+            });
+          return {
+            ok: true,
+            text: lines.length
+              ? `Recent admin audit entries (newest first):\n${lines.join('\n')}`
+              : 'No admin actions have been recorded on the server yet.',
+          };
+        }
+      }
       return { ok: true, text: result.data.text ?? 'Report ready.' };
     },
   };

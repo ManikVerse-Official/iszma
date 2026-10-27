@@ -38,6 +38,7 @@ try {
     editDistance,
     fuzzyKeywordMatch,
     getSectionGuide,
+    getGreetingTierPrices,
     GAME_STRATEGY_REFUSAL,
   } = joy;
   const { mallSections } = await server.ssrLoadModule('/src/data/sections.ts');
@@ -105,6 +106,25 @@ try {
   /* ---------- money & help ---------- */
   const pricing = resolveJoyQuery('how much do the cards cost', 'en');
   check('pricing questions are answered', pricing?.kind === 'pricing' || pricing?.kind === 'section');
+
+  /* Joy answers with the live catalogue prices when the UI supplies them. */
+  const livePrices = getGreetingTierPrices([
+    { tier: 'basic', price: 60, price_usd: 3 },
+    { tier: 'plus', price: 90, price_usd: 4 },
+    { tier: 'premium', price: 120, price_usd: 5 },
+    { tier: 'elite', price: 180, price_usd: 7 },
+  ]);
+  check(
+    'tiers are read from the existing four-tier schema',
+    livePrices.map((tier) => tier.tier).join(',') === 'basic,plus,premium,elite',
+    livePrices.map((tier) => tier.tier).join(','),
+  );
+  const livePricing = resolveJoyQuery('price kitna hai', 'hi', livePrices);
+  check(
+    'Home Joy uses live catalogue prices instead of hard-coded ones',
+    /Basic ₹60/.test(livePricing?.reply ?? '') && /Elite ₹180/.test(livePricing?.reply ?? ''),
+    livePricing?.reply?.slice(0, 120),
+  );
   const help = resolveJoyQuery('what can you do', 'en');
   check('“what can you do” returns help', help?.kind === 'help');
   check('help names both live sections', /Greetings/.test(help?.reply ?? '') && /ReportCard/.test(help?.reply ?? ''));
@@ -172,6 +192,21 @@ try {
 
   const sending = resolveJoyQuery('how do i send the card to someone', 'en');
   check('Joy explains how to send a card', /link/i.test(sending?.reply ?? ''));
+
+  const editCard = resolveJoyQuery('can i edit a card after paying', 'en');
+  check('Joy states a card cannot be edited after it is made', /cannot be edited/i.test(editCard?.reply ?? ''), editCard?.reply?.slice(0, 60));
+  const brokenLink = resolveJoyQuery('my card link is not opening', 'en');
+  check('Joy explains why a card link stops opening', /48 hours/.test(brokenLink?.reply ?? ''));
+
+  const firstPlayer = resolveJoyQuery('who starts first in pair 3 balls', 'en');
+  check('Joy answers who moves first', /White starts/i.test(firstPlayer?.reply ?? ''), firstPlayer?.reply?.slice(0, 60));
+
+  const leaderboard = resolveJoyQuery('is there a leaderboard', 'en');
+  check('Joy knows there is no leaderboard', /no leaderboard/i.test(leaderboard?.reply ?? ''));
+
+  const app = resolveJoyQuery('is there an app', 'en');
+  check('Joy explains how to use Ishmaverse on a phone', /Add to Home screen/i.test(app?.reply ?? ''), app?.reply?.slice(0, 60));
+  check('…and does not send the visitor to an unrelated section', /browser/i.test(app?.reply ?? ''));
 
   /* ---------- Pair-3Balls: Joy explains the official rules ---------- */
   const rules = resolveJoyQuery('how do i play pair 3 balls', 'en');
@@ -251,6 +286,48 @@ try {
     (gameGuide?.steps ?? []).every((s) => s.title?.en && s.title?.hi && s.detail?.en && s.detail?.hi));
   check('the Game Zone chips are bilingual',
     (gameGuide?.chips ?? []).length > 0 && (gameGuide?.chips ?? []).every((c) => c.en && c.hi));
+
+  /* ---------- Ishmaverse itself: the whole mall in one answer ---------- */
+  const aboutEn = resolveJoyQuery('what is ishmaverse', 'en');
+  check('Joy can explain what Ishmaverse is', /digital mall/i.test(aboutEn?.reply ?? ''), aboutEn?.reply?.slice(0, 60));
+  check(
+    '…and names every live section in that answer',
+    mallSections.filter((s) => s.available).every((s) => (aboutEn?.reply ?? '').includes(s.name)),
+    mallSections.filter((s) => s.available && !(aboutEn?.reply ?? '').includes(s.name)).map((s) => s.name).join(', '),
+  );
+  check(
+    '…and every coming-soon section',
+    mallSections.filter((s) => !s.available).every((s) => (aboutEn?.reply ?? '').includes(s.name)),
+    mallSections.filter((s) => !s.available && !(aboutEn?.reply ?? '').includes(s.name)).map((s) => s.name).join(', '),
+  );
+  const aboutHi = resolveJoyQuery('ishmaverse kya hai', 'hi');
+  check('…in Hinglish too', /digital mall hai/i.test(aboutHi?.reply ?? ''), aboutHi?.reply?.slice(0, 60));
+  for (const question of ['what do you sell', 'how does ishmaverse work', 'kya bechte ho', 'yahan kya kya hai']) {
+    check(`"${question}" is answered from the same knowledge`,
+      /digital mall/i.test(resolveJoyQuery(question, question.includes('kya') || question.includes('yahan') ? 'hi' : 'en')?.reply ?? ''));
+  }
+
+  /* ---------- Game Zone availability (offline / maintenance) ---------- */
+  const offline = resolveJoyQuery('does the game work offline', 'en');
+  check('Joy knows vs-Computer runs without a connection', /on your device/i.test(offline?.reply ?? ''), offline?.reply?.slice(0, 60));
+  check('…and which modes need the backend', /(Private Room|World Match)/.test(offline?.reply ?? ''));
+  const maintenance = resolveJoyQuery('game band hai kya', 'hi');
+  check('Joy explains maintenance in Hinglish', /maintenance/i.test(maintenance?.reply ?? ''));
+  check('Joy never promises the online modes when they are off',
+    /(unavailable|available nahi)/i.test(maintenance?.reply ?? ''));
+
+  /* ---------- ReportCard plan prices match the server's plan table ---------- */
+  const { STUDIO_PLANS } = await server.ssrLoadModule('/supabase/functions/_shared/plans.ts');
+  const planFaq = resolveJoyQuery('what are the reportcard plans', 'en')?.reply ?? '';
+  const plansInCopy = Object.values(STUDIO_PLANS).every(
+    (plan) => planFaq.includes(plan.name) && planFaq.includes(`₹${plan.priceInr}`) && planFaq.includes(`$${plan.priceUsd}`),
+  );
+  check(
+    'Joy quotes the real studio plans (INR and USD)',
+    plansInCopy,
+    Object.values(STUDIO_PLANS).map((p) => `${p.name} ₹${p.priceInr}/$${p.priceUsd}`).join(', '),
+  );
+  check('…and the six-month duration', /6 months/i.test(planFaq));
 
   /* ---------- off-topic redirect ---------- */
   const offEn = resolveJoyQuery('what is the weather in paris tomorrow', 'en');

@@ -2,22 +2,53 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.44.2
 import { FREE_LIMITS, type FreeLimit } from "./plans.ts";
 
 /**
- * Best-effort client IP. Supabase Edge Functions sit behind a proxy, so the
- * real address arrives in `x-forwarded-for` (first entry). We fall back to the
- * provider-specific headers before giving up.
+ * True for a syntactically valid IPv4 / IPv6 address.
+ *
+ * The limit keys on this value, so a junk header must never become a shared
+ * "IP" that silently groups unrelated visitors (or bypasses the cap).
+ */
+export const isIpAddress = (value: string): boolean => {
+  const ip = value.trim();
+  if (!ip) return false;
+
+  // IPv4: four 0-255 octets.
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+    return ip.split(".").every((part) => Number(part) <= 255);
+  }
+
+  // IPv6 (including IPv4-mapped). Reject zone ids and hostnames.
+  return /^[0-9a-f:]+$/i.test(ip) && ip.includes(":") && ip.length <= 45;
+};
+
+/**
+ * Client IP from trusted transport headers.
+ *
+ * Supabase Edge Functions run behind Cloudflare + their own gateway, which set
+ * `cf-connecting-ip` / `x-real-ip` for us. `x-forwarded-for` is the fallback,
+ * but only its LAST entry is used: earlier entries can be supplied by the
+ * caller (`X-Forwarded-For: 1.2.3.4` prepends), so reading the first hop would
+ * let a client choose the "network" the free-card limit counts against.
+ *
+ * Returns "" when no trustworthy address is available — callers must fail
+ * closed (the free-card flow does) instead of treating every such request as
+ * one shared network.
  */
 export const clientIp = (req: Request): string => {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  return (
+  const platform =
     req.headers.get("cf-connecting-ip") ??
     req.headers.get("x-real-ip") ??
     req.headers.get("fly-client-ip") ??
-    ""
-  );
+    "";
+  if (isIpAddress(platform)) return platform.trim();
+
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const hops = forwarded.split(",").map((hop) => hop.trim()).filter(Boolean);
+    const last = hops[hops.length - 1] ?? "";
+    if (isIpAddress(last)) return last;
+  }
+
+  return "";
 };
 
 export interface TrialDecision {

@@ -49,7 +49,17 @@ const server = await createServer({
   logLevel: 'error',
 });
 
-const FUNCTIONS = new Set(['action', 'targetId', 'targetName', 'fields', 'notStored', 'destructive']);
+const FUNCTIONS = new Set([
+  'action',
+  'targetId',
+  'targetName',
+  'fields',
+  'tier',
+  'themeIds',
+  'bulk',
+  'notStored',
+  'destructive',
+]);
 const FORBIDDEN_CLIENT_FIELDS = ['isAdmin', 'permissions', 'confirmed', 'actorId', 'userId', 'role', 'email'];
 
 try {
@@ -179,6 +189,189 @@ try {
     );
   }
 
+  /* ── CORE · greeting-tier pricing ───────────────────────────────────── */
+  {
+    const tierOk = validateAdminOpRequest(
+      {
+        action: 'pricing.tier.update',
+        tier: 'premium',
+        themeIds: ['t2', 't5', 't2'],
+        fields: { price: 99 },
+      },
+      null,
+      true,
+    );
+    check(
+      'a tier price accepts the four-tier id, theme ids and price',
+      tierOk.ok === true && tierOk.request.tier === 'premium' && tierOk.request.fields.price_inr === 99,
+      JSON.stringify(tierOk),
+    );
+    check(
+      '…and de-duplicates the theme ids',
+      tierOk.ok === true && JSON.stringify(tierOk.request.themeIds) === JSON.stringify(['t2', 't5']),
+      JSON.stringify(tierOk.ok && tierOk.request.themeIds),
+    );
+
+    const noTier = validateAdminOpRequest(
+      { action: 'pricing.tier.update', themeIds: ['t2'], fields: { price: 99 } },
+      null,
+      true,
+    );
+    check('a tier price without a tier is rejected', noTier.ok === false && /tier must be one of/i.test(noTier.error));
+
+    const fakeTier = validateAdminOpRequest(
+      { action: 'pricing.tier.update', tier: 'gold', themeIds: ['t2'], fields: { price: 99 } },
+      null,
+      true,
+    );
+    check('an invented tier is rejected (no fifth tier)', fakeTier.ok === false && /tier must be one of/i.test(fakeTier.error));
+
+    const noThemes = validateAdminOpRequest(
+      { action: 'pricing.tier.update', tier: 'premium', themeIds: [], fields: { price: 99 } },
+      null,
+      true,
+    );
+    check('a tier price with no theme ids is rejected', noThemes.ok === false && /themeIds/i.test(noThemes.error));
+
+    const noPrice = validateAdminOpRequest(
+      { action: 'pricing.tier.update', tier: 'premium', themeIds: ['t2'], fields: {} },
+      null,
+      true,
+    );
+    check('a tier price without an amount is rejected', noPrice.ok === false && /price/i.test(noPrice.error));
+
+    const denied = validateAdminOpRequest(
+      { action: 'pricing.tier.update', tier: 'premium', themeIds: ['t2'], fields: { price: 99 } },
+      ['reports.read'],
+      true,
+    );
+    check('a reports-only admin cannot change a tier price', denied.ok === false && denied.status === 403 && /themes\.write/.test(denied.error), JSON.stringify(denied));
+
+    const writerAllowed = hasAdminPermission(['themes.write'], 'pricing.tier.update');
+    check('a themes-writer can update a tier price', writerAllowed === true);
+  }
+
+  /* ── CORE · ReportCard Studio plan pricing ──────────────────────────── */
+  {
+    const planOk = validateAdminOpRequest(
+      {
+        action: 'pricing.plan.update',
+        targetId: 'simple',
+        fields: { price_inr: 399, duration_months: 3 },
+      },
+      null,
+      true,
+    );
+    check(
+      'a plan price accepts a plan id, an INR price and a duration',
+      planOk.ok === true &&
+        planOk.request.fields.price_inr === 399 &&
+        planOk.request.fields.duration_months === 3,
+      JSON.stringify(planOk),
+    );
+    check(
+      '…keeping price and price_inr in sync for the plan row',
+      planOk.ok === true && planOk.request.fields.price === 399,
+      JSON.stringify(planOk.ok && planOk.request.fields),
+    );
+
+    const planUsd = validateAdminOpRequest(
+      { action: 'pricing.plan.update', targetId: 'modern', fields: { price_usd: 7.99 } },
+      null,
+      true,
+    );
+    check(
+      'a USD-only plan change is accepted without touching INR',
+      planUsd.ok === true &&
+        planUsd.request.fields.price_usd === 7.99 &&
+        planUsd.request.fields.price_inr === undefined,
+      JSON.stringify(planUsd.ok && planUsd.request.fields),
+    );
+
+    const planBad = [
+      [{ action: 'pricing.plan.update', fields: { price_inr: 399 } }, 'a plan price without a target'],
+      [
+        { action: 'pricing.plan.update', targetId: 'x'.repeat(LIMITS.targetId + 1), fields: { price_inr: 399 } },
+        'an over-long plan id',
+      ],
+      [
+        { action: 'pricing.plan.update', targetId: '../../etc/passwd', fields: { price_inr: 399 } },
+        'a path-like plan id',
+      ],
+      [
+        { action: 'pricing.plan.update', targetId: 'simple', fields: { price_inr: LIMITS.price + 1 } },
+        'a plan price above the limit',
+      ],
+      [
+        { action: 'pricing.plan.update', targetId: 'simple', fields: { price_inr: -1 } },
+        'a negative plan price',
+      ],
+      [
+        { action: 'pricing.plan.update', targetId: 'simple', fields: { duration_months: 0 } },
+        'a zero-month duration',
+      ],
+      [
+        { action: 'pricing.plan.update', targetId: 'simple', fields: { duration_months: LIMITS.planDurationMonths + 1 } },
+        'a duration beyond the limit',
+      ],
+      [
+        { action: 'pricing.plan.update', targetId: 'simple', fields: { duration_months: 2.5 } },
+        'a fractional duration',
+      ],
+      [
+        { action: 'pricing.plan.update', targetId: 'simple', fields: { duration_months: 'abc' } },
+        'a non-numeric duration',
+      ],
+      [
+        { action: 'pricing.plan.update', targetId: 'simple', fields: { price_inr: 399, plan_id: 'holistic' } },
+        'an attempt to move the target plan through fields',
+      ],
+      [{ action: 'pricing.plan.update', targetId: 'simple', fields: {} }, 'a plan update with no fields'],
+    ];
+    for (const [body, label] of planBad) {
+      const result = validateAdminOpRequest(body, null, true);
+      check(
+        `rejects ${label}`,
+        result.ok === false && [400, 403].includes(result.status),
+        JSON.stringify(result),
+      );
+    }
+
+    const planDenied = validateAdminOpRequest(
+      { action: 'pricing.plan.update', targetId: 'simple', fields: { price_inr: 399 } },
+      ['themes.write', 'products.write'],
+      true,
+    );
+    check(
+      'a catalogue writer cannot change plan pricing without settings.write',
+      planDenied.ok === false && planDenied.status === 403 && /settings\.write/.test(planDenied.error),
+      JSON.stringify(planDenied),
+    );
+    check(
+      'a settings writer may change plan pricing',
+      hasAdminPermission(['settings.write'], 'pricing.plan.update') === true,
+    );
+
+    const planDiff = buildAuditDiff(
+      'pricing.plan.update',
+      { price_inr: 369, price_usd: 4.99, duration_months: 6 },
+      { price_inr: 399, price_usd: 4.99, duration_months: 3 },
+    );
+    check(
+      'the plan audit diff keeps only the changed money/duration fields',
+      Object.keys(planDiff).sort().join(',') === 'duration_months,price_inr',
+      JSON.stringify(planDiff),
+    );
+    check(
+      '…with the real before and after values',
+      planDiff.price_inr.from === 369 &&
+        planDiff.price_inr.to === 399 &&
+        planDiff.duration_months.from === 6 &&
+        planDiff.duration_months.to === 3,
+      JSON.stringify(planDiff),
+    );
+  }
+
   /* ── CORE · authorization, including forged body fields ─────────────── */
   {
     const forged = validateAdminOpRequest(
@@ -276,6 +469,129 @@ try {
       'a client-sent "confirmed" flag is not part of the server decision',
       accepted.ok === true && JSON.stringify(accepted.request).includes('confirmed') === false,
     );
+
+    /* Bulk pricing is a rule, validated server-side, never a price list. */
+    const bulkOk = validateAdminOpRequest(
+      { action: 'pricing.bulk.update', scope: 'themes', mode: 'increase_percent', value: 10 },
+      null,
+      true,
+    );
+    check(
+      'a bulk price rule is accepted as a rule',
+      bulkOk.ok === true &&
+        bulkOk.request.bulk?.scope === 'themes' &&
+        bulkOk.request.bulk?.mode === 'increase_percent' &&
+        bulkOk.request.bulk?.value === 10 &&
+        bulkOk.request.bulk?.currency === 'INR',
+      bulkOk.ok ? JSON.stringify(bulkOk.request.bulk) : bulkOk.error,
+    );
+    check(
+      'a bulk rule carries no raw prices',
+      bulkOk.ok === true && Object.keys(bulkOk.request.fields).length === 0,
+      bulkOk.ok ? JSON.stringify(bulkOk.request.fields) : bulkOk.error,
+    );
+
+    const bulkScopeRequired = validateAdminOpRequest(
+      { action: 'pricing.bulk.update', mode: 'set', value: 99 },
+      null,
+      true,
+    );
+    check('a bulk change without a scope is refused', bulkScopeRequired.ok === false);
+
+    const bulkBadMode = validateAdminOpRequest(
+      { action: 'pricing.bulk.update', scope: 'themes', mode: 'double', value: 10 },
+      null,
+      true,
+    );
+    check('an unknown bulk mode is refused', bulkBadMode.ok === false);
+
+    const bulkTooBig = validateAdminOpRequest(
+      { action: 'pricing.bulk.update', scope: 'themes', mode: 'increase_percent', value: 500 },
+      null,
+      true,
+    );
+    check('a bulk percentage above 100 is refused (not clamped)', bulkTooBig.ok === false);
+
+    const bulkBadCurrency = validateAdminOpRequest(
+      { action: 'pricing.bulk.update', scope: 'themes', mode: 'set', value: 99, currency: 'EUR' },
+      null,
+      true,
+    );
+    check('an unsupported bulk currency is refused', bulkBadCurrency.ok === false);
+
+    const bulkThemesOnly = validateAdminOpRequest(
+      { action: 'pricing.bulk.update', scope: 'products', mode: 'set', value: 99 },
+      ['themes.write'],
+      true,
+    );
+    check(
+      'a themes-only admin cannot bulk-change product prices',
+      bulkThemesOnly.ok === false && bulkThemesOnly.denied === true && /products\.write/.test(bulkThemesOnly.error),
+      bulkThemesOnly.ok ? 'accepted' : bulkThemesOnly.error,
+    );
+
+    const gameOk = validateAdminOpRequest(
+      { action: 'game.update', fields: { enabled: false, maintenance: true, sort_order: 2 } },
+      null,
+      true,
+    );
+    check(
+      'a Game Zone update validates enabled, maintenance and sort_order',
+      gameOk.ok === true &&
+        gameOk.request.fields.enabled === false &&
+        gameOk.request.fields.maintenance === true &&
+        gameOk.request.fields.sort_order === 2,
+      gameOk.ok ? JSON.stringify(gameOk.request.fields) : gameOk.error,
+    );
+
+    const gameBadSort = validateAdminOpRequest(
+      { action: 'game.update', fields: { sort_order: 1.5 } },
+      null,
+      true,
+    );
+    check('a non-integer game sort_order is refused', gameBadSort.ok === false);
+
+    const brandUnsafeLogo = validateAdminOpRequest(
+      { action: 'brand.update', fields: { logo_url: 'javascript:alert(1)' } },
+      null,
+      true,
+    );
+    check('an unsafe brand logo URL is refused', brandUnsafeLogo.ok === false);
+
+    const brandOk = validateAdminOpRequest(
+      { action: 'brand.update', fields: { site_name: 'Ishmaverse', brand_tagline: 'Cards that feel alive' } },
+      null,
+      true,
+    );
+    check(
+      'a brand update validates the site name and tagline',
+      brandOk.ok === true &&
+        brandOk.request.fields.site_name === 'Ishmaverse' &&
+        brandOk.request.fields.brand_tagline === 'Cards that feel alive',
+      brandOk.ok ? JSON.stringify(brandOk.request.fields) : brandOk.error,
+    );
+
+    const gameDenied = validateAdminOpRequest(
+      { action: 'game.update', fields: { enabled: false } },
+      ['products.write'],
+      true,
+    );
+    check(
+      'Game Zone controls need the games.write permission',
+      gameDenied.ok === false && /games\.write/.test(gameDenied.error),
+      gameDenied.ok ? 'accepted' : gameDenied.error,
+    );
+
+    const brandDenied = validateAdminOpRequest(
+      { action: 'brand.update', fields: { site_name: 'Nope' } },
+      ['themes.write'],
+      true,
+    );
+    check(
+      'brand controls need the settings.write permission',
+      brandDenied.ok === false && /settings\.write/.test(brandDenied.error),
+      brandDenied.ok ? 'accepted' : brandDenied.error,
+    );
   }
 
   /* ── CORE · audit safety ────────────────────────────────────────────── */
@@ -371,6 +687,36 @@ try {
     await ops.updateTheme('t2', { price: 99 });
     check('theme price update maps to theme.update', calls.at(-1).action === 'theme.update' && calls.at(-1).targetId === 't2');
 
+    await ops.updateTierPrice({ tier: 'premium', themeIds: ['t2', 't5'], priceInr: 99 });
+    check(
+      'a tier price maps to pricing.tier.update with the resolved theme ids',
+      calls.at(-1).action === 'pricing.tier.update' &&
+        calls.at(-1).tier === 'premium' &&
+        JSON.stringify(calls.at(-1).themeIds) === JSON.stringify(['t2', 't5']) &&
+        calls.at(-1).fields.price_inr === 99,
+      JSON.stringify(calls.at(-1)),
+    );
+
+    await ops.updatePlanPrice({ planId: 'simple', priceInr: 399 });
+    check(
+      'a plan price maps to pricing.plan.update with the plan id',
+      calls.at(-1).action === 'pricing.plan.update' && calls.at(-1).targetId === 'simple',
+      JSON.stringify(calls.at(-1)),
+    );
+    check(
+      '…sending only the money fields',
+      calls.at(-1).fields.price_inr === 399 && calls.at(-1).fields.price_usd === undefined,
+      JSON.stringify(calls.at(-1).fields),
+    );
+    await ops.updatePlanPrice({ planId: 'modern', durationMonths: 3 });
+    check(
+      'a duration-only plan change sends duration_months',
+      calls.at(-1).action === 'pricing.plan.update' &&
+        calls.at(-1).fields.duration_months === 3 &&
+        calls.at(-1).fields.price_inr === undefined,
+      JSON.stringify(calls.at(-1)),
+    );
+
     await ops.publishTheme('t2');
     check('publishing maps to theme.publish', calls.at(-1).action === 'theme.publish');
     await ops.unpublishTheme('t2');
@@ -460,6 +806,14 @@ try {
     );
     check('the function rate-limits requests', /consumeRateLimit\(/.test(fn));
     check(
+      'the rate limit is consumed atomically through one database function',
+      /consume_admin_rate_limit/.test(fn) && /\.rpc\("consume_admin_rate_limit"/.test(fn),
+    );
+    check(
+      'the legacy read-then-upsert limiter is only a fallback',
+      /consumeRateLimitLegacy/.test(fn) && /isMissingRateLimitFunction/.test(fn),
+    );
+    check(
       'the function never reads client-supplied identity or permission fields',
       !/body\.(isAdmin|permissions|confirmed|actorId|userId|role)|raw\.(isAdmin|permissions|confirmed|actorId|userId|role)/.test(fn),
       'a body field that must be ignored appears to be read',
@@ -489,6 +843,29 @@ try {
       /stillThere/.test(fn),
     );
 
+    const rateLimitMigration = readFileSync(
+      'supabase/migrations/20261022_step16_atomic_admin_rate_limit.sql',
+      'utf8',
+    );
+    check(
+      'the atomic rate-limit function locks the counter row',
+      /create or replace function public\.consume_admin_rate_limit/.test(rateLimitMigration) &&
+        /for update/.test(rateLimitMigration),
+    );
+    check(
+      'the atomic limiter is not executable by client roles',
+      /revoke all on function public\.consume_admin_rate_limit[\s\S]{0,80}?from public, anon, authenticated/.test(rateLimitMigration),
+    );
+    check(
+      'the atomic limiter keeps the existing service-role-only counter table',
+      /create table if not exists public\.admin_rate_limits/.test(rateLimitMigration) &&
+        /revoke all on public\.admin_rate_limits from anon, authenticated/.test(rateLimitMigration),
+    );
+    check(
+      'the service role is explicitly granted access to the counter',
+      /grant all on public\.admin_rate_limits to service_role/.test(rateLimitMigration),
+    );
+
     const migration = readFileSync('supabase/migrations/20261014_step13_admin_ops.sql', 'utf8');
     check('audit history has no client-facing delete/update grant', !/grant[^;]*admin_audit_log/i.test(migration) || /revoke all on public\.admin_audit_log/.test(migration));
     check('the audit table exists and is append-only for the client', /create table if not exists public\.admin_audit_log/.test(migration) && /revoke all on public\.admin_audit_log from anon, authenticated/.test(migration));
@@ -499,6 +876,87 @@ try {
     check(
       'the migration is additive and does not drop existing policies',
       !/drop policy/i.test(migration) && !/drop table/i.test(migration),
+    );
+
+    /* Plan pricing: one authoritative table, locked to the service role. */
+    const planMigration = readFileSync(
+      'supabase/migrations/20261023_step17_studio_plan_pricing.sql',
+      'utf8',
+    );
+    check(
+      'the plan price table exists with bounded money and duration columns',
+      /create table if not exists public\.studio_plan_prices/.test(planMigration) &&
+        /price_inr numeric/.test(planMigration) &&
+        /duration_months integer/.test(planMigration),
+    );
+    check('RLS is enabled on the plan price table', /alter table public\.studio_plan_prices enable row level security/.test(planMigration));
+    check(
+      'clients may read plan prices but not write them',
+      /create policy "studio plan prices are readable"/.test(planMigration) &&
+        /revoke insert, update, delete on public\.studio_plan_prices from anon, authenticated/.test(planMigration),
+    );
+    check(
+      'no policy grants a client write on plan prices',
+      !/create policy[^;]*studio_plan_prices[\s\S]{0,120}?for (insert|update|delete)/i.test(planMigration),
+    );
+    check(
+      'seeding never overwrites a price an admin already changed',
+      /on conflict \(plan_id\) do nothing/.test(planMigration),
+    );
+
+    check(
+      'the function executes plan pricing against the authoritative table',
+      /execPlanPriceUpdate/.test(fn) && /\.from\("studio_plan_prices"\)/.test(fn),
+    );
+    check(
+      'the plan executor reads back and compares the saved values',
+      /The saved INR plan price could not be verified/.test(fn) &&
+        /The saved plan duration could not be verified/.test(fn),
+    );
+    check(
+      'an unknown plan id is a 404, never an insert',
+      /No ReportCard Studio plan has the id/.test(fn) && !/studio_plan_prices"\)[\s\S]{0,80}?insert/.test(fn),
+    );
+
+    /* The store-product table shipped without RLS; the fix must stay narrow. */
+    const productsMigration = readFileSync(
+      'supabase/migrations/20261024_step18_products_rls.sql',
+      'utf8',
+    );
+    check(
+      'the products table gets RLS enabled',
+      /alter table if exists public\.products enable row level security/.test(productsMigration),
+    );
+    check(
+      '…a public read policy keeps the storefront working',
+      /create policy "products public read"[\s\S]{0,80}?for select/.test(productsMigration),
+    );
+    check(
+      '…and only an admin may write',
+      /create policy "products admin write"[\s\S]{0,120}?using \(public\.is_admin\(\)\)[\s\S]{0,80}?with check \(public\.is_admin\(\)\)/.test(
+        productsMigration,
+      ),
+    );
+    check(
+      '…with anon write grants removed',
+      /revoke insert, update, delete on public\.products from anon/.test(productsMigration),
+    );
+    check(
+      'the products fix drops no table and no existing policy content',
+      !/drop table/i.test(productsMigration),
+    );
+
+    const entitlementFn = readFileSync('supabase/functions/entitlement/index.ts', 'utf8');
+    check(
+      'the subscribe path charges from the live plan table',
+      /loadStudioPlans\(supabase\)/.test(entitlementFn) &&
+        /const plan = plans\[clean\(body\.planId, 40\)\]/.test(entitlementFn),
+    );
+    check(
+      'the public plans endpoint exposes prices and limits, not secrets',
+      /action === "plans"/.test(entitlementFn) &&
+        /plans: Object\.values\(plans\)/.test(entitlementFn) &&
+        !/SERVICE_ROLE|service_role_key|RAZORPAY_KEY_SECRET/.test(entitlementFn),
     );
   }
 

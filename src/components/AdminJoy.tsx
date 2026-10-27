@@ -1,211 +1,41 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { Bot, Send, ShieldCheck, ShieldAlert, Check, X } from 'lucide-react';
-import { useCatalog } from '../context/CatalogContext';
-import { useGreeting } from '../context/GreetingContext';
-import { getAdminSession, type AdminIdentity } from '../services/adminAuth';
-import {
-  type AdminActor,
-  type AdminCommandPlan,
-  type AdminOps,
-  type AdminSnapshot,
-  executeAdminCommand,
-  planAdminCommand,
-} from '../services/adminJoy';
-import { getAuditLog } from '../services/auditLog';
-import { createServerAdminOps, fetchServerAudit, type ServerAuditEntry } from '../services/adminOps';
-import { getSecuritySummary } from '../services/threatDetection';
-
-interface JoyMessage {
-  id: string;
-  from: 'bot' | 'user';
-  text: string;
-}
-
-const EXAMPLES = [
-  "Change product XYZ's price to ₹399.",
-  'Show me today\'s order summary.',
-  'Publish theme Holistic Progress.',
-  'Unpublish the selected track.',
-];
+import { ADMIN_JOY_EXAMPLES } from './admin/adminJoyPrompts';
+import { useAdminJoySession } from './admin/useAdminJoyConsole';
 
 /**
- * Admin Joy — the in-dashboard assistant.
+ * Admin Joy — the full in-dashboard console.
  *
  * It only exists on the authenticated dashboard route, and it re-reads the
- * server-verified session before acting. The heavy lifting (permission gate,
- * confirmation, ambiguity handling, audit) lives in `services/adminJoy.ts`; this
- * component is the console UI and the bridge to the live catalog.
+ * server-verified session before acting. The engine (permission gate,
+ * confirmation, ambiguity handling, audit) lives in `useAdminJoyConsole` and is
+ * shared with the floating dock, so both surfaces run the exact same code.
  */
 const AdminJoy: React.FC = () => {
-  const { isAdmin, adminLoading } = useGreeting();
-  const catalog = useCatalog();
-  const [actor, setActor] = useState<AdminActor | null>(null);
-  const [messages, setMessages] = useState<JoyMessage[]>([
-    {
-      id: 'welcome',
-      from: 'bot',
-      text: 'Admin assistant ready. Ask me to change a price, publish or unpublish a theme, add a product, or show a report. I confirm before anything sensitive runs.',
-    },
-  ]);
-  const [input, setInput] = useState('');
-  const [pending, setPending] = useState<AdminCommandPlan | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [serverAudit, setServerAudit] = useState<ServerAuditEntry[] | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const {
+    actor,
+    adminLoading,
+    isAdmin,
+    messages,
+    input,
+    setInput,
+    run,
+    pending,
+    confirmPending,
+    cancelPending,
+    notice,
+    dismissNotice,
+    serverAudit,
+    security,
+    localAudit,
+    scrollRef,
+  } = useAdminJoySession();
 
-  /* Re-read the server-verified session whenever the dashboard mounts. */
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      const session: AdminIdentity | null = await getAdminSession();
-      if (!active) return;
-      setActor(
-        session
-          ? { userId: session.userId, email: session.email, isAdmin: isAdmin }
-          : null,
-      );
-    })();
-    return () => {
-      active = false;
-    };
-  }, [isAdmin]);
-
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [messages, pending]);
-
-  const snapshot: AdminSnapshot = useMemo(
-    () => ({
-      products: catalog.products.map((p) => ({
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        price_inr: p.price_inr,
-        description: p.description,
-      })),
-      themes: catalog.themes.map((t) => ({ id: t.id, name: t.name, price: t.price, tier: t.tier })),
-    }),
-    [catalog.products, catalog.themes],
+  /* The summary counts are cheap to derive and stable between renders. */
+  const auditSource = useMemo(
+    () => (serverAudit ? 'server log' : 'this browser only'),
+    [serverAudit],
   );
-
-  /*
-   * The executor runs every privileged change on the server through the
-   * `admin-ops` Edge Function. There is deliberately NO local fallback: if the
-   * function rejects the request (or is unreachable) the call returns
-   * `ok: false` and nothing is changed in the browser.
-   *
-   * After a confirmed success we re-read the catalogue from the server, so the
-   * dashboard shows what the database actually persisted rather than an
-   * optimistic local edit.
-   */
-  const serverOps = useMemo(() => createServerAdminOps(), []);
-
-  const ops: AdminOps = useMemo(() => {
-    const refresh = async (kind: 'product' | 'theme', id?: string) => {
-      try {
-        await catalog.refreshFromServer(id ? { kind, id } : { kind });
-      } catch {
-        setNotice('The change was saved on the server, but the dashboard could not re-read it. Reload to see the latest state.');
-      }
-    };
-
-    return {
-      updateProduct: async (id, patch) => {
-        const result = await serverOps.updateProduct(id, patch);
-        if (result.ok) await refresh('product', id);
-        return result;
-      },
-      createProduct: async (inputProduct) => {
-        const result = await serverOps.createProduct(inputProduct);
-        if (result.ok) {
-          const createdId = typeof result.after?.id === 'string' ? result.after.id : undefined;
-          await refresh('product', createdId);
-        }
-        return result;
-      },
-      deleteProduct: async (id) => {
-        const result = await serverOps.deleteProduct(id);
-        if (result.ok) await refresh('product', id);
-        return result;
-      },
-      updateTheme: async (id, patch) => {
-        const result = await serverOps.updateTheme(id, patch);
-        if (result.ok) await refresh('theme', id);
-        return result;
-      },
-      publishTheme: async (id) => {
-        const result = await serverOps.publishTheme(id);
-        if (result.ok) await refresh('theme', id);
-        return result;
-      },
-      unpublishTheme: async (id) => {
-        const result = await serverOps.unpublishTheme(id);
-        if (result.ok) await refresh('theme', id);
-        return result;
-      },
-      deleteTheme: async (id) => {
-        const result = await serverOps.deleteTheme(id);
-        if (result.ok) await refresh('theme', id);
-        return result;
-      },
-      report: (kind) => serverOps.report!(kind),
-    };
-  }, [catalog, serverOps]);
-
-  const pushBot = (text: string) =>
-    setMessages((prev) => [...prev, { id: `${Date.now()}-b`, from: 'bot', text }]);
-
-  const run = async (text: string, confirmed = false) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-
-    setMessages((prev) => [...prev, { id: `${Date.now()}-u`, from: 'user', text: trimmed }]);
-    setInput('');
-
-    if (!actor || !actor.isAdmin) {
-      const plan = planAdminCommand(trimmed, actor ?? { userId: '', email: '', isAdmin: false }, snapshot);
-      const result = await executeAdminCommand(
-        plan,
-        ops,
-        actor ?? { userId: '', email: '', isAdmin: false },
-      );
-      pushBot(result.message);
-      return;
-    }
-
-    const plan = planAdminCommand(trimmed, actor, snapshot);
-    if (plan.status === 'confirm' && !confirmed) {
-      setPending(plan);
-      pushBot(plan.confirmationPrompt ?? plan.summary);
-      return;
-    }
-    if (plan.status === 'denied' || plan.status === 'clarify') {
-      const result = await executeAdminCommand(plan, ops, actor);
-      pushBot(result.message);
-      return;
-    }
-
-    const result = await executeAdminCommand(plan, ops, actor, { confirmed });
-    setPending(null);
-    pushBot(result.message);
-    if (catalog.syncWarning) setNotice(catalog.syncWarning);
-  };
-
-  /* Read the durable server audit log; fall back to the local log when absent. */
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      const entries = await fetchServerAudit(5);
-      if (active) setServerAudit(entries);
-    })();
-    return () => {
-      active = false;
-    };
-  }, [messages]);
-
-  const security = useMemo(() => getSecuritySummary(5), [messages]);
-  const localAudit = useMemo(() => getAuditLog().slice(0, 5), [messages]);
 
   if (adminLoading) {
     return <div className="text-gray-400 text-sm">Checking your admin session…</div>;
@@ -229,7 +59,7 @@ const AdminJoy: React.FC = () => {
       {notice && (
         <div className="flex items-start justify-between gap-3 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
           <span>{notice}</span>
-          <button onClick={() => { setNotice(null); catalog.dismissSyncWarning(); }} aria-label="Dismiss">
+          <button onClick={dismissNotice} aria-label="Dismiss">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -246,6 +76,19 @@ const AdminJoy: React.FC = () => {
             </div>
             <div className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${msg.from === 'user' ? 'bg-purple-600 text-white' : 'bg-neon-purple/20 text-white'}`}>
               <p className="whitespace-pre-line">{msg.text}</p>
+              {msg.links && msg.links.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {msg.links.map((link) => (
+                    <a
+                      key={`${link.href}-${link.label}`}
+                      href={link.href}
+                      className="rounded-lg border border-neon-purple/40 px-2.5 py-1 text-[11px] text-neon-purple hover:bg-neon-purple/10"
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -255,13 +98,13 @@ const AdminJoy: React.FC = () => {
             <p className="mb-2">{pending.confirmationPrompt ?? pending.summary}</p>
             <div className="flex gap-2">
               <button
-                onClick={() => void run(pending.summary, true)}
+                onClick={confirmPending}
                 className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
               >
                 <Check className="w-3.5 h-3.5" /> Confirm
               </button>
               <button
-                onClick={() => { setPending(null); pushBot('Cancelled — nothing was changed.'); }}
+                onClick={cancelPending}
                 className="inline-flex items-center gap-1 rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:bg-white/5"
               >
                 <X className="w-3.5 h-3.5" /> Cancel
@@ -272,7 +115,7 @@ const AdminJoy: React.FC = () => {
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        {EXAMPLES.map((example) => (
+        {ADMIN_JOY_EXAMPLES.map((example) => (
           <button
             key={example}
             onClick={() => void run(example)}
@@ -289,6 +132,7 @@ const AdminJoy: React.FC = () => {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && void run(input)}
           placeholder="Ask Admin Joy…"
+          aria-label="Ask Admin Joy"
           className="flex-1 rounded-xl border border-neon-purple/30 bg-bg-dark-start px-4 py-2 text-sm text-white focus:outline-none focus:border-neon-purple"
         />
         <button onClick={() => void run(input)} className="rounded-xl bg-neon-purple p-2 hover:bg-purple-600" aria-label="Send command">
@@ -300,9 +144,7 @@ const AdminJoy: React.FC = () => {
         <div className="rounded-2xl border border-neon-purple/25 p-4">
           <h4 className="font-semibold text-white mb-2">
             Recent audit entries
-            <span className="ml-2 text-[10px] font-normal text-gray-500">
-              {serverAudit ? 'server log' : 'this browser only'}
-            </span>
+            <span className="ml-2 text-[10px] font-normal text-gray-500">{auditSource}</span>
           </h4>
           {serverAudit ? (
             serverAudit.length === 0 ? (

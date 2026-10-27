@@ -4,6 +4,12 @@
  * Prices are set by Ishmaverse. INR is the base price; the USD figure is the
  * international price shown to visitors outside India. All plans currently run
  * for six months. Admins never pay (see ADMIN_EMAILS).
+ *
+ * IMPORTANT: the values below are only a fallback for an offline/dev build. The
+ * authoritative prices live in the `studio_plan_prices` table (migration
+ * 20261023_step17) and are edited from Ishmaverse Admin Joy. The pricing screens
+ * call `fetchLivePlans()` (services/planPricing.ts) and show the server value, so
+ * changing a price here will NOT change what a customer is charged.
  */
 
 export interface StudioPlan {

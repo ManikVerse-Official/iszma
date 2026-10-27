@@ -9,6 +9,7 @@ import { fileURLToPath, URL } from 'node:url'
  * PWA asset paths (manifest, icons, service worker scope) follow this base.
  */
 export default defineConfig({
+  envDir: '../',
   base: process.env.VITE_BASE || '/',
   plugins: [react()],
   resolve: {

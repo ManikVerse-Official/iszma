@@ -693,6 +693,18 @@ serve(async (req: Request) => {
 
       }
 
+      // Free themes (the welcome card) are published through the dedicated
+      // create-free-greeting flow, which enforces usage limits. A paid order
+      // for ₹0 is always a client mistake, never a discount.
+      if (amount <= 0) {
+
+        return errorResponse(
+          "This card is free — publish it through the free card flow (create-free-greeting).",
+          402
+        );
+
+      }
+
 
       /* -----------------------------------------------------
          DEMO

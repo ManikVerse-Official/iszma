@@ -34,7 +34,9 @@ import { errorResponse, handleOptions, jsonResponse } from "../_shared/http.ts";
 import { createAdminClient, getUserFromRequest, isAdminUser } from "../_shared/auth.ts";
 import { clientIp } from "../_shared/entitlement.ts";
 import {
+  GAME_ID,
   LIMITS,
+  MAX_BULK_ITEMS,
   buildAuditDiff,
   fixedWindowDecision,
   normaliseOutcome,
@@ -105,12 +107,26 @@ const recordAudit = async (client: any, input: AuditInput): Promise<string | nul
 
 class RateLimitBackendUnavailable extends Error {}
 
+interface RateLimitDecisionRow {
+  allowed: boolean;
+  remaining?: number;
+  retry_after_seconds?: number;
+}
+
+/** True only when the database has not been migrated to the atomic function yet. */
+const isMissingRateLimitFunction = (error: { code?: string; message?: string }): boolean =>
+  error.code === "PGRST202" ||
+  /could not find the function|function .* does not exist/i.test(error.message ?? "");
+
 /**
- * Fixed-window limit backed by `admin_rate_limits` (service-role only).
- * If the counter table cannot be read the request is refused rather than
- * allowed, so a missing migration can never silently remove the limit.
+ * Legacy read-then-upsert limiter.
+ *
+ * Kept only as a fallback for a database where migration 20261022 (the atomic
+ * function) has not been applied yet. It still fails closed. The atomic path
+ * below is the supported one and removes the read/write race that used to
+ * surface as a rate-limit store error.
  */
-const consumeRateLimit = async (
+const consumeRateLimitLegacy = async (
   client: any,
   key: string,
   limit: number,
@@ -141,6 +157,44 @@ const consumeRateLimit = async (
   if (writeError) throw new RateLimitBackendUnavailable(writeError.message);
 
   return decision;
+};
+
+/**
+ * Fixed-window limit consumed atomically by `consume_admin_rate_limit`
+ * (service-role only). If the counter cannot be consumed the request is refused
+ * rather than allowed, so a missing migration can never silently remove the
+ * limit.
+ */
+const consumeRateLimit = async (
+  client: any,
+  key: string,
+  limit: number,
+  windowSeconds: number,
+): Promise<{ allowed: boolean; retryAfterSeconds: number }> => {
+  const { data, error } = await client.rpc("consume_admin_rate_limit", {
+    p_key: key,
+    p_limit: limit,
+    p_window_seconds: windowSeconds,
+  });
+
+  if (error) {
+    if (isMissingRateLimitFunction(error)) {
+      return consumeRateLimitLegacy(client, key, limit, windowSeconds);
+    }
+    throw new RateLimitBackendUnavailable(error.message);
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as RateLimitDecisionRow | null;
+  if (!row || typeof row.allowed !== "boolean") {
+    throw new RateLimitBackendUnavailable(
+      "The atomic rate-limit function returned no decision.",
+    );
+  }
+
+  return {
+    allowed: row.allowed,
+    retryAfterSeconds: Math.max(0, Number(row.retry_after_seconds ?? 0)),
+  };
 };
 
 /* ------------------------------------------------------------------ */
@@ -251,6 +305,109 @@ const execThemeUpdate = async (client: any, id: string, fields: any): Promise<Ex
   };
 };
 
+/**
+ * Updates the existing `theme_prices` rows for one greeting-card tier.
+ *
+ * There is no tier table in this schema: a tier is the set of themes with that
+ * `tier`, and its price is each theme's `theme_prices` row. The executor reads
+ * the rows first, writes them, then reads them back and compares the persisted
+ * values before reporting success. The free theme (price 0) is never included by
+ * Admin Joy, so it cannot accidentally become paid.
+ */
+const execTierPriceUpdate = async (
+  client: any,
+  tier: string,
+  themeIds: string[],
+  fields: any,
+): Promise<ExecResult> => {
+  const ids = [...new Set(themeIds)];
+  if (!ids.length) return { ok: false, status: 400, error: "No themes were supplied for that tier." };
+
+  const { data: beforeRows, error: readError } = await client
+    .from("theme_prices")
+    .select("*")
+    .in("theme_id", ids);
+  if (readError) return { ok: false, status: 500, error: readError.message };
+
+  const beforeById = new Map<string, Record<string, unknown>>();
+  for (const row of beforeRows ?? []) {
+    beforeById.set(String((row as Record<string, unknown>).theme_id), asRecord(row));
+  }
+
+  const priceInr = fields.price_inr ?? fields.price;
+  const priceUsd = fields.price_usd;
+  const now = new Date().toISOString();
+  const rows = ids.map((themeId) => {
+    const before = beforeById.get(themeId) ?? {};
+    return {
+      theme_id: themeId,
+      price_inr: priceInr !== undefined ? Number(priceInr) : Number(before.price_inr ?? 0),
+      price_usd: priceUsd !== undefined ? Number(priceUsd) : Number(before.price_usd ?? 0),
+      updated_at: now,
+    };
+  });
+
+  const { error: writeError } = await client
+    .from("theme_prices")
+    .upsert(rows, { onConflict: "theme_id" });
+  if (writeError) return { ok: false, status: 500, error: writeError.message };
+
+  /* Read back the money fields and prove every requested theme was saved. */
+  const { data: afterRows, error: verifyError } = await client
+    .from("theme_prices")
+    .select("*")
+    .in("theme_id", ids);
+  if (verifyError) return { ok: false, status: 500, error: verifyError.message };
+
+  const afterById = new Map<string, Record<string, unknown>>();
+  for (const row of afterRows ?? []) {
+    afterById.set(String((row as Record<string, unknown>).theme_id), asRecord(row));
+  }
+
+  for (const themeId of ids) {
+    const saved = afterById.get(themeId);
+    if (!saved) {
+      return {
+        ok: false,
+        status: 500,
+        error: `The saved price for theme "${themeId}" could not be verified.`,
+      };
+    }
+    if (priceInr !== undefined && Number(saved.price_inr) !== Number(priceInr)) {
+      return {
+        ok: false,
+        status: 500,
+        error: `Theme "${themeId}" did not save the requested price.`,
+      };
+    }
+    if (priceUsd !== undefined && Number(saved.price_usd) !== Number(priceUsd)) {
+      return {
+        ok: false,
+        status: 500,
+        error: `Theme "${themeId}" did not save the requested USD price.`,
+      };
+    }
+  }
+
+  const firstBefore = beforeRows?.length ? asRecord(beforeRows[0]) : null;
+  const firstAfter = afterRows?.length ? asRecord(afterRows[0]) : null;
+  return {
+    ok: true,
+    before: {
+      tier,
+      price_inr: firstBefore ? Number(firstBefore.price_inr) : null,
+      price_usd: firstBefore ? Number(firstBefore.price_usd) : null,
+      themes: beforeRows ?? [],
+    },
+    after: {
+      tier,
+      price_inr: priceInr !== undefined ? Number(priceInr) : firstAfter ? Number(firstAfter.price_inr) : null,
+      price_usd: priceUsd !== undefined ? Number(priceUsd) : firstAfter ? Number(firstAfter.price_usd) : null,
+      themes: afterRows ?? [],
+    },
+  };
+};
+
 const execThemeVisibility = async (
   client: any,
   id: string,
@@ -303,6 +460,315 @@ const execThemeDelete = async (client: any, id: string): Promise<ExecResult> => 
   const hidden = await execThemeVisibility(client, id, true);
   if (!hidden.ok) return hidden;
   return { ...hidden, after: { ...hidden.after, source: "builtin" } };
+};
+
+/*
+ * Game Zone availability.
+ *
+ * The setting lives in `game_settings` (migration 20261016). The executor only
+ * writes the fields it was given, then reads the row back and compares every
+ * saved value before reporting success.
+ */
+const execGameUpdate = async (client: any, fields: any): Promise<ExecResult> => {
+  const { data: before, error } = await client
+    .from("game_settings")
+    .select("*")
+    .eq("game_id", GAME_ID)
+    .maybeSingle();
+  if (error) return { ok: false, status: 500, error: error.message };
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (fields.enabled !== undefined) patch.enabled = fields.enabled;
+  if (fields.maintenance !== undefined) patch.maintenance = fields.maintenance;
+  if (fields.sort_order !== undefined) patch.sort_order = fields.sort_order;
+
+  if (before) {
+    const { error: updateError } = await client
+      .from("game_settings")
+      .update(patch)
+      .eq("game_id", GAME_ID);
+    if (updateError) return { ok: false, status: 500, error: updateError.message };
+  } else {
+    const { error: insertError } = await client.from("game_settings").insert([
+      {
+        game_id: GAME_ID,
+        enabled: fields.enabled ?? true,
+        maintenance: fields.maintenance ?? false,
+        sort_order: fields.sort_order ?? 0,
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+    if (insertError) return { ok: false, status: 500, error: insertError.message };
+  }
+
+  const { data: after, error: readError } = await client
+    .from("game_settings")
+    .select("*")
+    .eq("game_id", GAME_ID)
+    .maybeSingle();
+  if (readError) return { ok: false, status: 500, error: readError.message };
+  if (!after) {
+    return { ok: false, status: 500, error: "The Game Zone setting could not be read back after saving." };
+  }
+
+  for (const key of ["enabled", "maintenance", "sort_order"] as const) {
+    if (fields[key] !== undefined && after[key] !== fields[key]) {
+      return { ok: false, status: 500, error: `The Game Zone setting "${key}" did not save.` };
+    }
+  }
+
+  return {
+    ok: true,
+    before: before ? asRecord(before) : { game_id: GAME_ID },
+    after: asRecord(after),
+  };
+};
+
+/**
+ * Brand settings (site name, tagline, logo). Stored in the single
+ * `site_settings` row the storefront already reads. No row means there is
+ * nothing to update; the executor says so rather than inventing defaults.
+ */
+const execBrandUpdate = async (client: any, fields: any): Promise<ExecResult> => {
+  const { data: before, error } = await client
+    .from("site_settings")
+    .select("*")
+    .limit(1)
+    .maybeSingle();
+  if (error) return { ok: false, status: 500, error: error.message };
+  if (!before || before.id === undefined || before.id === null) {
+    return {
+      ok: false,
+      status: 404,
+      error: "No site_settings row exists yet, so there is nothing to update. Save the brand once in Admin → Settings first.",
+    };
+  }
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (fields.site_name !== undefined) patch.site_name = fields.site_name;
+  if (fields.brand_tagline !== undefined) patch.brand_tagline = fields.brand_tagline;
+  if (fields.logo_url !== undefined) patch.logo_url = fields.logo_url;
+
+  const { data: after, error: updateError } = await client
+    .from("site_settings")
+    .update(patch)
+    .eq("id", before.id)
+    .select("*")
+    .single();
+  if (updateError) return { ok: false, status: 500, error: updateError.message };
+
+  for (const key of ["site_name", "brand_tagline", "logo_url"] as const) {
+    if (fields[key] !== undefined && after[key] !== fields[key]) {
+      return { ok: false, status: 500, error: `The brand setting "${key}" did not save.` };
+    }
+  }
+
+  return { ok: true, before: asRecord(before), after: asRecord(after) };
+};
+
+/*
+ * ReportCard Studio plan pricing (studio_plan_prices, migration 20261023).
+ *
+ * This row is what the `entitlement` function charges and records, so the
+ * executor reads it before the write and proves every requested value after it —
+ * including the billing duration, which changes what a subscription buys.
+ * A plan id that is not in the table is a 404, never a silent insert.
+ */
+const execPlanPriceUpdate = async (client: any, id: string, fields: any): Promise<ExecResult> => {
+  const { data: before, error } = await client
+    .from("studio_plan_prices")
+    .select("*")
+    .eq("plan_id", id)
+    .maybeSingle();
+  if (error) return { ok: false, status: 500, error: error.message };
+  if (!before) {
+    return {
+      ok: false,
+      status: 404,
+      error: `No ReportCard Studio plan has the id "${id}".`,
+    };
+  }
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const priceInr = fields.price_inr ?? fields.price;
+  if (priceInr !== undefined) patch.price_inr = priceInr;
+  if (fields.price_usd !== undefined) patch.price_usd = fields.price_usd;
+  if (fields.duration_months !== undefined) patch.duration_months = fields.duration_months;
+  if (Object.keys(patch).length === 1) {
+    return { ok: false, status: 400, error: "No supported plan fields to change." };
+  }
+
+  const { data: after, error: updateError } = await client
+    .from("studio_plan_prices")
+    .update(patch)
+    .eq("plan_id", id)
+    .select("*")
+    .single();
+  if (updateError) return { ok: false, status: 500, error: updateError.message };
+  if (!after) {
+    return { ok: false, status: 500, error: "The plan price could not be read back after saving." };
+  }
+
+  /* Read-back verification: a mismatch is a failure, never a success message. */
+  if (priceInr !== undefined && Number(after.price_inr) !== Number(priceInr)) {
+    return { ok: false, status: 500, error: "The saved INR plan price could not be verified." };
+  }
+  if (fields.price_usd !== undefined && Number(after.price_usd) !== Number(fields.price_usd)) {
+    return { ok: false, status: 500, error: "The saved USD plan price could not be verified." };
+  }
+  if (
+    fields.duration_months !== undefined &&
+    Number(after.duration_months) !== Number(fields.duration_months)
+  ) {
+    return { ok: false, status: 500, error: "The saved plan duration could not be verified." };
+  }
+
+  return { ok: true, before: asRecord(before), after: asRecord(after) };
+};
+
+const roundMoney = (value: number): number => Math.round(value * 100) / 100;
+
+/** A new price for one item. Free items stay free in every bulk change. */
+const bulkNextPrice = (
+  current: number,
+  mode: "set" | "increase_percent" | "decrease_percent",
+  value: number,
+): number => {
+  if (!(current > 0)) return current;
+  const next =
+    mode === "set"
+      ? value
+      : mode === "increase_percent"
+        ? current * (1 + value / 100)
+        : current * (1 - value / 100);
+  return roundMoney(Math.min(LIMITS.price, Math.max(0, next)));
+};
+
+/**
+ * Catalogue-wide price change.
+ *
+ * The server recalculates every price from the rows it is about to write — the
+ * client only sends the rule (scope, mode, value, currency). Rows are read
+ * before and after, and every requested change is verified. Free (₹0 / $0)
+ * items are deliberately left at zero so a percentage command cannot turn the
+ * free Welcome Card into a paid product.
+ */
+const execBulkPriceUpdate = async (
+  client: any,
+  bulk: { scope: "products" | "themes"; mode: "set" | "increase_percent" | "decrease_percent"; value: number; currency: "INR" | "USD" },
+): Promise<ExecResult> => {
+  const { scope, mode, value, currency } = bulk;
+
+  if (scope === "products") {
+    const { data: rows, error } = await client
+      .from("products")
+      .select("id, name, price, price_usd");
+    if (error) return { ok: false, status: 500, error: error.message };
+
+    const changes = (rows ?? [])
+      .map((row: Record<string, unknown>) => {
+        const id = String(row.id ?? "");
+        const current = Number(currency === "INR" ? row.price : row.price_usd) || 0;
+        const next = bulkNextPrice(current, mode, value);
+        return { id, name: String(row.name ?? ""), current, next };
+      })
+      .filter((row: { id: string; current: number; next: number }) => row.id && row.next !== row.current);
+
+    if (!changes.length) {
+      return { ok: false, status: 400, error: "No priced products would change with that rule (free items stay free)." };
+    }
+    if (changes.length > MAX_BULK_ITEMS) {
+      return { ok: false, status: 400, error: `One bulk change may touch at most ${MAX_BULK_ITEMS} products.` };
+    }
+
+    for (const change of changes) {
+      const patch = currency === "INR" ? { price: change.next } : { price_usd: change.next };
+      const { error: writeError } = await client.from("products").update(patch).eq("id", change.id);
+      if (writeError) return { ok: false, status: 500, error: writeError.message };
+    }
+
+    const { data: afterRows, error: verifyError } = await client
+      .from("products")
+      .select("id, name, price, price_usd")
+      .in("id", changes.map((change: { id: string }) => change.id));
+    if (verifyError) return { ok: false, status: 500, error: verifyError.message };
+    const afterById = new Map<string, Record<string, unknown>>();
+    for (const row of afterRows ?? []) {
+      afterById.set(String((row as Record<string, unknown>).id), asRecord(row));
+    }
+    for (const change of changes) {
+      const saved = afterById.get(change.id);
+      const savedPrice = Number(currency === "INR" ? saved?.price : saved?.price_usd);
+      if (!saved || savedPrice !== change.next) {
+        return { ok: false, status: 500, error: `The new price for product "${change.name}" could not be verified.` };
+      }
+    }
+
+    return {
+      ok: true,
+      before: { scope, currency, samples: changes.slice(0, 10).map((c: { name: string; current: number }) => ({ name: c.name, price: c.current })) },
+      after: { scope, currency, updated: changes.length, samples: changes.slice(0, 10).map((c: { name: string; next: number }) => ({ name: c.name, price: c.next })) },
+    };
+  }
+
+  const { data: rows, error } = await client
+    .from("theme_prices")
+    .select("theme_id, price_inr, price_usd");
+  if (error) return { ok: false, status: 500, error: error.message };
+
+  const changes = (rows ?? [])
+    .map((row: Record<string, unknown>) => {
+      const themeId = String(row.theme_id ?? "");
+      const beforeInr = Number(row.price_inr) || 0;
+      const beforeUsd = Number(row.price_usd) || 0;
+      const current = currency === "INR" ? beforeInr : beforeUsd;
+      const next = bulkNextPrice(current, mode, value);
+      return { themeId, beforeInr, beforeUsd, current, next };
+    })
+    .filter((row: { themeId: string; current: number; next: number }) => row.themeId && row.next !== row.current);
+
+  if (!changes.length) {
+    return { ok: false, status: 400, error: "No priced greeting themes would change with that rule (free items stay free)." };
+  }
+  if (changes.length > MAX_BULK_ITEMS) {
+    return { ok: false, status: 400, error: `One bulk change may touch at most ${MAX_BULK_ITEMS} themes.` };
+  }
+
+  const now = new Date().toISOString();
+  const payload = changes.map((change: { themeId: string; beforeInr: number; beforeUsd: number; next: number }) => ({
+    theme_id: change.themeId,
+    price_inr: currency === "INR" ? change.next : change.beforeInr,
+    price_usd: currency === "USD" ? change.next : change.beforeUsd,
+    updated_at: now,
+  }));
+
+  const { error: writeError } = await client
+    .from("theme_prices")
+    .upsert(payload, { onConflict: "theme_id" });
+  if (writeError) return { ok: false, status: 500, error: writeError.message };
+
+  const { data: afterRows, error: verifyError } = await client
+    .from("theme_prices")
+    .select("theme_id, price_inr, price_usd")
+    .in("theme_id", changes.map((change: { themeId: string }) => change.themeId));
+  if (verifyError) return { ok: false, status: 500, error: verifyError.message };
+  const afterById = new Map<string, Record<string, unknown>>();
+  for (const row of afterRows ?? []) {
+    afterById.set(String((row as Record<string, unknown>).theme_id), asRecord(row));
+  }
+  for (const change of changes) {
+    const saved = afterById.get(change.themeId);
+    const savedPrice = Number(currency === "INR" ? saved?.price_inr : saved?.price_usd);
+    if (!saved || savedPrice !== change.next) {
+      return { ok: false, status: 500, error: `The new price for theme "${change.themeId}" could not be verified.` };
+    }
+  }
+
+  return {
+    ok: true,
+    before: { scope, currency, samples: changes.slice(0, 10).map((c: { themeId: string; current: number }) => ({ themeId: c.themeId, price: c.current })) },
+    after: { scope, currency, updated: changes.length, samples: changes.slice(0, 10).map((c: { themeId: string; next: number }) => ({ themeId: c.themeId, price: c.next })) },
+  };
 };
 
 const countRows = async (client: any, table: string): Promise<number | null> => {
@@ -483,6 +949,21 @@ serve(async (req: Request) => {
       case "theme.delete":
         result = await execThemeDelete(client, op.targetId!);
         break;
+      case "pricing.tier.update":
+        result = await execTierPriceUpdate(client, op.tier!, op.themeIds, op.fields);
+        break;
+      case "pricing.bulk.update":
+        result = await execBulkPriceUpdate(client, op.bulk!);
+        break;
+      case "pricing.plan.update":
+        result = await execPlanPriceUpdate(client, op.targetId!, op.fields);
+        break;
+      case "game.update":
+        result = await execGameUpdate(client, op.fields);
+        break;
+      case "brand.update":
+        result = await execBrandUpdate(client, op.fields);
+        break;
       default: {
         const report = await buildReport(client, op.action);
         if ("ok" in report && report.ok === false) {
@@ -510,13 +991,29 @@ serve(async (req: Request) => {
       }
     }
 
+    const auditTargetId =
+      op.action === "pricing.tier.update" ? `tier:${op.tier}` : op.targetId;
+    const auditTargetName =
+      op.action === "pricing.tier.update"
+        ? op.tier
+        : op.action === "pricing.plan.update"
+          ? (result.after?.name as string | undefined) ?? op.targetName
+          : op.targetName;
+    const auditTargetType =
+      op.action === "pricing.tier.update"
+        ? "tier"
+        : op.action === "pricing.plan.update"
+          ? "studio_plan"
+          : undefined;
+
     if (!result.ok) {
       const auditId = await recordAudit(client, {
         actorId: user.id,
         actorEmail: user.email ?? null,
         action: op.action,
-        targetId: op.targetId,
-        targetName: op.targetName,
+        targetType: auditTargetType,
+        targetId: auditTargetId,
+        targetName: auditTargetName,
         outcome: "failure",
         detail: result.error,
         ip,
@@ -528,8 +1025,10 @@ serve(async (req: Request) => {
       actorId: user.id,
       actorEmail: user.email ?? null,
       action: op.action,
-      targetId: op.targetId,
-      targetName: op.targetName ?? (result.after?.name as string | undefined) ?? null,
+      targetType: auditTargetType,
+      targetId: auditTargetId,
+      targetName:
+        auditTargetName ?? (result.after?.name as string | undefined) ?? null,
       outcome: "success",
       detail: `Persisted by ${user.email ?? user.id}.`,
       before: result.before,
@@ -551,8 +1050,7 @@ serve(async (req: Request) => {
   } catch (error) {
     if (error instanceof RateLimitBackendUnavailable) {
       console.error("admin-ops rate-limit backend unavailable:", error.message);
-      return errorResponse(
-        "The server rate-limit store is unavailable, so this command was refused. Apply migration 20261014_step13_admin_ops.sql.",
+      return errorResponse(          "The server rate-limit store is unavailable, so this command was refused. Apply migration 20261022_step16_atomic_admin_rate_limit.sql (it also re-creates the step-13 table and grants service_role access).",
         503,
       );
     }

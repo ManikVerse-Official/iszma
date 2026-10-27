@@ -1,19 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  MessageCircle,
-  X,
-  Send,
-  User,
-  Minus,
-  Compass,
-  ChevronLeft,
-  ChevronRight,
-  Check,
-} from 'lucide-react';
-import ishmaverseLogo from '../ishmaverse.png';
+import { Compass, ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import { useBrand } from '../context/BrandContext';
-import { SmartImage } from './SmartImage';
+import { useCatalog } from '../context/CatalogContext';
+import { JoyBubble, JoyChip, JoyComposer, JoyFloating, JoyPanel } from './joy/JoyUI';
 import {
   FOUNDER_INTRO,
   FOUNDER_NO,
@@ -23,6 +13,7 @@ import {
   JOY_TOPICS,
   joyReplyLanguage,
   getFallback,
+  getGreetingTierPrices,
   getSectionChips,
   getSectionGuide,
   isFounderQuery,
@@ -115,6 +106,7 @@ interface ChatbotProps {
 
 export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
   const { brand } = useBrand();
+  const catalog = useCatalog();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [chatState, setChatState] = useState<ChatState>('idle');
@@ -321,7 +313,12 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
       }
 
       // 3) Section lookup — understands English + Hinglish keywords.
-      const resolved = resolveJoyQuery(userMessage, messageLang);
+      // Prices come from the live catalogue, so an admin price change is reflected.
+      const resolved = resolveJoyQuery(
+        userMessage,
+        messageLang,
+        getGreetingTierPrices(catalog.themes),
+      );
       if (resolved) {
         if (resolved.kind === 'section') {
           pushBot(resolved.reply, { label: resolved.actionLabel, to: resolved.topic.route });
@@ -366,28 +363,29 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
   };
 
   return (
-    // The launcher sits higher on a phone (above the browser toolbar / safe
-    // area) so it never covers the page's own buttons; on desktop it returns to
-    // the usual bottom-right corner.
-    <div className="fixed z-50 flex flex-col items-end gap-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom))] sm:right-8 sm:bottom-8">
-      {isOpen ? (
-        <div className="bg-bg-dark-end border border-neon-purple rounded-2xl w-[calc(100vw-1.5rem)] max-w-sm sm:w-80 sm:max-w-none shadow-neon flex flex-col max-h-[75vh] sm:max-h-[80vh]">
-          <div className="flex items-center justify-between p-4 border-b border-neon-purple/30 bg-gradient-to-r from-bg-dark-end to-bg-dark-start">
-            <div className="flex items-center gap-3">
-              <SmartImage src={ishmaverseLogo} alt="IshMaVerse" className="w-8 h-8" />
-              <span className="font-bold text-white text-sm sm:text-base">IshMaVerse</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white p-1" aria-label="Minimise chat">
-                <Minus className="w-5 h-5" />
-              </button>
-              <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white p-1" aria-label="Close chat">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {sectionName && (
+    <JoyFloating
+      open={isOpen}
+      onOpen={openChat}
+      ariaLabel="Open chat with Joy"
+      greeting={
+        showGreeting
+          ? {
+              title: 'Hi, I’m Joy 👋',
+              text: BUBBLE.en,
+              onOpen: openChat,
+              onDismiss: () => setShowGreeting(false),
+            }
+          : null
+      }
+    >
+      <JoyPanel
+        title="IshMaVerse"
+        onClose={() => setIsOpen(false)}
+        onMinimise={() => setIsOpen(false)}
+        bodyRef={scrollRef}
+        onBodyScroll={handleMessagesScroll}
+        badge={
+          sectionName ? (
             <div className="px-4 py-2 bg-neon-purple/10 border-b border-neon-purple/25 text-[11px] text-gray-300 flex items-center gap-1.5">
               <Compass className="w-3.5 h-3.5 shrink-0 text-neon-purple" />
               <span className="truncate">
@@ -395,113 +393,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
                 here.
               </span>
             </div>
-          )}
-
-          <div
-            ref={scrollRef}
-            onScroll={handleMessagesScroll}
-            className="flex-1 p-4 overflow-y-auto flex flex-col gap-3 bg-bg-dark-start"
-          >
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex items-start gap-2 ${msg.from === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
-              >
-                {msg.from === 'bot' && (
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs bg-neon-purple flex-shrink-0">
-                    <User className="w-4 h-4" />
-                  </div>
-                )}
-                <div
-                  className={`max-w-[80%] p-3 rounded-xl text-sm ${
-                    msg.from === 'bot' ? 'bg-neon-purple/20 text-white' : 'bg-purple-600 text-white'
-                  }`}
-                >
-                  <p className="whitespace-pre-line">{msg.text}</p>
-                  {msg.action && (
-                    <button
-                      onClick={() => goTo(msg.action!.to)}
-                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-neon-purple/60 bg-bg-dark-end/70 px-3 py-1.5 text-xs font-semibold text-neon-purple hover:bg-neon-purple hover:text-white transition-all"
-                    >
-                      <Compass className="w-3.5 h-3.5" />
-                      {msg.action.label}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* Step-by-step walkthrough — one step at a time, Back / Next. */}
-            {walk && (
-              <div className="rounded-xl border border-neon-purple/40 bg-bg-dark-end p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-neon-purple">
-                    Step {walk.index + 1} of {walk.steps.length}
-                  </span>
-                  <button
-                    onClick={() => setWalk(null)}
-                    className="text-[11px] text-gray-400 hover:text-white"
-                  >
-                    Close
-                  </button>
-                </div>
-                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mb-3">
-                  <div
-                    className="h-full bg-neon-purple transition-all"
-                    style={{ width: `${((walk.index + 1) / walk.steps.length) * 100}%` }}
-                  />
-                </div>
-                <h4 className="text-sm font-semibold text-white">
-                  {pick(walk.steps[walk.index].title, lang)}
-                </h4>
-                <p className="text-xs text-gray-300 mt-1 leading-relaxed">
-                  {pick(walk.steps[walk.index].detail, lang)}
-                </p>
-                <div className="flex items-center justify-between mt-3">
-                  <button
-                    onClick={() =>
-                      setWalk((w) => (w ? { ...w, index: Math.max(0, w.index - 1) } : w))
-                    }
-                    disabled={walk.index === 0}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neon-purple/40 text-xs font-semibold text-gray-200 hover:bg-white/5 disabled:opacity-40"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" /> Back
-                  </button>
-                  {walk.index < walk.steps.length - 1 ? (
-                    <button
-                      onClick={() =>
-                        setWalk((w) =>
-                          w ? { ...w, index: Math.min(w.steps.length - 1, w.index + 1) } : w,
-                        )
-                      }
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-neon-purple text-white text-xs font-semibold hover:bg-purple-600"
-                    >
-                      Next <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setWalk(null);
-                        pushBot(
-                          pick(
-                            {
-                              en: 'That is the whole section — you are set. Anything else I can explain?',
-                              hi: 'Bas itna hi tha — ab aap ready ho. Aur kuch samjhaun?',
-                            },
-                            lang,
-                          ),
-                        );
-                      }}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700"
-                    >
-                      <Check className="w-3.5 h-3.5" /> Done
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
+          ) : null
+        }
+        footer={
           <div className="px-4 pt-3 border-t border-neon-purple/30 bg-bg-dark-end">
             {/*
              * Quick questions. Inside a section these become that section's
@@ -510,73 +404,114 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
              */}
             <div className="flex flex-wrap gap-1.5 mb-2">
               {sectionGuide && sectionGuide.steps.length > 0 && (
-                <button
+                <JoyChip
+                  primary
+                  icon={<Compass className="w-3 h-3" />}
+                  label={pick({ en: 'Guide me', hi: 'Guide karo' }, lang)}
                   onClick={() => void send('How do I use this section?')}
-                  className="rounded-full bg-neon-purple px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-purple-600 transition-all inline-flex items-center gap-1"
-                >
-                  <Compass className="w-3 h-3" />
-                  {pick({ en: 'Guide me', hi: 'Guide karo' }, lang)}
-                </button>
+                />
               )}
               {(sectionChips.length > 0
                 ? sectionChips.slice(0, 3).map((chip) => pick(chip, lang))
                 : QUICK_QUESTIONS[lang]
               ).map((question) => (
-                <button
-                  key={question}
-                  onClick={() => void send(question)}
-                  className="rounded-full border border-neon-purple/40 px-2.5 py-1 text-[11px] text-gray-300 hover:border-neon-purple hover:text-white transition-all"
-                >
-                  {question}
-                </button>
+                <JoyChip key={question} label={question} onClick={() => void send(question)} />
               ))}
             </div>
 
-            <div className="flex items-center gap-3 pb-4">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="TYPE A MESSAGE..."
-                className="flex-1 bg-bg-dark-start border border-neon-purple/30 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-neon-purple text-white"
-              />
+            <JoyComposer
+              value={input}
+              onChange={setInput}
+              onSend={handleSend}
+              placeholder="TYPE A MESSAGE..."
+            />
+          </div>
+        }
+      >
+        {messages.map((msg) => (
+          <JoyBubble key={msg.id} from={msg.from} text={msg.text}>
+            {msg.action && (
               <button
-                onClick={handleSend}
-                className="bg-neon-purple p-2 rounded-xl hover:bg-purple-600 transition-all"
-                aria-label="Send message"
+                onClick={() => goTo(msg.action!.to)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-neon-purple/60 bg-bg-dark-end/70 px-3 py-1.5 text-xs font-semibold text-neon-purple hover:bg-neon-purple hover:text-white transition-all"
               >
-                <Send className="w-5 h-5" />
+                <Compass className="w-3.5 h-3.5" />
+                {msg.action.label}
               </button>
+            )}
+          </JoyBubble>
+        ))}
+
+        {/* Step-by-step walkthrough — one step at a time, Back / Next. */}
+        {walk && (
+          <div className="rounded-xl border border-neon-purple/40 bg-bg-dark-end p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-neon-purple">
+                Step {walk.index + 1} of {walk.steps.length}
+              </span>
+              <button
+                onClick={() => setWalk(null)}
+                className="text-[11px] text-gray-400 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mb-3">
+              <div
+                className="h-full bg-neon-purple transition-all"
+                style={{ width: `${((walk.index + 1) / walk.steps.length) * 100}%` }}
+              />
+            </div>
+            <h4 className="text-sm font-semibold text-white">
+              {pick(walk.steps[walk.index].title, lang)}
+            </h4>
+            <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+              {pick(walk.steps[walk.index].detail, lang)}
+            </p>
+            <div className="flex items-center justify-between mt-3">
+              <button
+                onClick={() =>
+                  setWalk((w) => (w ? { ...w, index: Math.max(0, w.index - 1) } : w))
+                }
+                disabled={walk.index === 0}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neon-purple/40 text-xs font-semibold text-gray-200 hover:bg-white/5 disabled:opacity-40"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Back
+              </button>
+              {walk.index < walk.steps.length - 1 ? (
+                <button
+                  onClick={() =>
+                    setWalk((w) =>
+                      w ? { ...w, index: Math.min(w.steps.length - 1, w.index + 1) } : w,
+                    )
+                  }
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-neon-purple text-white text-xs font-semibold hover:bg-purple-600"
+                >
+                  Next <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setWalk(null);
+                    pushBot(
+                      pick(
+                        {
+                          en: 'That is the whole section — you are set. Anything else I can explain?',
+                          hi: 'Bas itna hi tha — ab aap ready ho. Aur kuch samjhaun?',
+                        },
+                        lang,
+                      ),
+                    );
+                  }}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700"
+                >
+                  <Check className="w-3.5 h-3.5" /> Done
+                </button>
+              )}
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="flex flex-col items-end gap-3">
-          {showGreeting && (
-            <div className="relative max-w-[78vw] sm:max-w-xs bg-bg-dark-end border border-neon-purple/50 rounded-2xl rounded-br-sm px-4 py-3 shadow-neon text-left">
-              <button
-                onClick={() => setShowGreeting(false)}
-                className="absolute -top-2 -right-2 bg-bg-dark-start border border-neon-purple/40 rounded-full p-1 text-gray-400 hover:text-white"
-                aria-label="Dismiss welcome message"
-              >
-                <X className="w-3 h-3" />
-              </button>
-              <button onClick={openChat} className="text-left">
-                <p className="text-sm text-white font-semibold">Hi, I’m Joy 👋</p>
-                <p className="text-xs text-gray-300 mt-0.5">{BUBBLE.en}</p>
-              </button>
-            </div>
-          )}
-          <button
-            onClick={openChat}
-            className="bg-neon-purple p-3 sm:p-4 rounded-full shadow-neon hover:bg-purple-600 transition-all"
-            aria-label="Open chat with Joy"
-          >
-            <MessageCircle className="w-6 h-6" />
-          </button>
-        </div>
-      )}
-    </div>
+        )}
+      </JoyPanel>
+    </JoyFloating>
   );
 };

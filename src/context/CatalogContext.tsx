@@ -68,7 +68,12 @@ interface CatalogContextType {
    * for that one id (its local "edited by me" marker is cleared) while every
    * unrelated in-browser edit is preserved.
    */
-  refreshFromServer: (hint?: { kind: 'product' | 'theme'; id?: string }) => Promise<void>;
+  refreshFromServer: (hint?: {
+    kind: 'product' | 'theme';
+    id?: string;
+    /** Several ids changed together (e.g. a whole tier's prices). */
+    ids?: string[];
+  }) => Promise<void>;
 }
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
@@ -256,7 +261,7 @@ export const CatalogProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   /** Server-authoritative re-read; see `refreshFromServer` in the context type. */
   const refreshFromServer = useCallback(
-    async (hint?: { kind: 'product' | 'theme'; id?: string }) => {
+    async (hint?: { kind: 'product' | 'theme'; id?: string; ids?: string[] }) => {
       const [remoteProducts, remotePrices, remoteThemeCatalog] = await Promise.all([
         fetchRemoteProducts(),
         fetchRemoteThemePrices(),
@@ -269,6 +274,18 @@ export const CatalogProvider: React.FC<{ children: ReactNode }> = ({ children })
           themePrices: remotePrices,
           themeCatalog: remoteThemeCatalog,
         });
+
+        /* Several records changed together: the server is authoritative for all of them. */
+        if (hint?.ids) {
+          const productEditedAt = { ...merged.productEditedAt };
+          const priceEditedAt = { ...merged.priceEditedAt };
+          for (const id of hint.ids) {
+            delete priceEditedAt[id];
+            delete productEditedAt[id];
+          }
+          return { ...merged, priceEditedAt, productEditedAt };
+        }
+
         if (!hint?.id) return merged;
 
         const productEditedAt = { ...merged.productEditedAt };
