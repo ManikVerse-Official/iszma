@@ -25,7 +25,8 @@ export default function ReportTemplate() {
   const [idx, setIdx] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [gateMessage, setGateMessage] = useState('');
-  const { canGenerate, consumeUse, freeUsesRemaining, isAdmin, planActive } = useEntitlement();
+  const { beginGeneration, finishGeneration, freeUsesRemaining, isAdmin, planActive } =
+    useEntitlement();
 
   /* Hooks must run before the empty-state early return. */
   const studentPhotos = useMemo(
@@ -80,7 +81,10 @@ export default function ReportTemplate() {
    */
   const downloadOne = async () => {
     if (!student) return;
-    const gate = canGenerate();
+
+    /* The server claims the generation before the PDF is rendered, so a used-up
+     * allowance blocks the download rather than silently producing the file. */
+    const gate = await beginGeneration();
     if (!gate.allowed) {
       setGateMessage(gate.reason ?? 'Subscribe to keep downloading report cards.');
       return;
@@ -92,7 +96,10 @@ export default function ReportTemplate() {
       const used = new Set<string>();
       const fname = buildPdfFilename(student.rollNo, student.name, used);
       downloadBlob(blob, fname);
-      consumeUse();
+      await finishGeneration(gate.claimId, true);
+    } catch {
+      // The PDF was not produced, so the claimed generation is given back.
+      await finishGeneration(gate.claimId, false);
     } finally {
       setDownloading(false);
     }
@@ -100,41 +107,41 @@ export default function ReportTemplate() {
 
   return (
     <div className="space-y-4">
-      {!isAdmin && (
-        <div
-          className={`rounded-xl border px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-2 ${
-            planActive
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : freeUsesRemaining > 0
-                ? 'bg-brand-50 border-brand-200 text-brand-800'
-                : 'bg-amber-50 border-amber-200 text-amber-800'
-          }`}
-        >
-          <span>
-            {planActive ? (
-              'Your subscription is active — unlimited report cards.'
-            ) : freeUsesRemaining > 0 ? (
-              <>
-                Free generations left:{' '}
-                <strong>
-                  {freeUsesRemaining} of {FREE_USE_LIMIT}
-                </strong>{' '}
-                — a single PDF download counts as one.
-              </>
-            ) : (
-              `Your ${FREE_USE_LIMIT} free generations are used up. Subscribe to keep downloading.`
-            )}
-          </span>
-          {!planActive && (
-            <Link
-              to="/pricing"
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 text-white px-4 py-2 text-xs font-semibold hover:bg-brand-700"
-            >
-              {freeUsesRemaining > 0 ? 'View plans' : 'Subscribe now'}
-            </Link>
+      <div
+        className={`rounded-xl border px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-2 ${
+          isAdmin || planActive
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : freeUsesRemaining > 0
+              ? 'bg-brand-50 border-brand-200 text-brand-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+        }`}
+      >
+        <span>
+          {isAdmin ? (
+            <strong>Admin: Unlimited</strong>
+          ) : planActive ? (
+            'Your subscription is active — unlimited report cards.'
+          ) : freeUsesRemaining > 0 ? (
+            <>
+              Free generations left:{' '}
+              <strong>
+                {freeUsesRemaining} of {FREE_USE_LIMIT}
+              </strong>{' '}
+              — a single PDF download counts as one.
+            </>
+          ) : (
+            `Your ${FREE_USE_LIMIT} free generations are used up. Subscribe to keep downloading.`
           )}
-        </div>
-      )}
+        </span>
+        {!isAdmin && !planActive && (
+          <Link
+            to="/pricing"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 text-white px-4 py-2 text-xs font-semibold hover:bg-brand-700"
+          >
+            {freeUsesRemaining > 0 ? 'View plans' : 'Subscribe now'}
+          </Link>
+        )}
+      </div>
 
       {gateMessage && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

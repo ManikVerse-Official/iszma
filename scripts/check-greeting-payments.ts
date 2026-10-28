@@ -273,7 +273,18 @@ async function runTests() {
   const entitlementFn = source('supabase/functions/entitlement/index.ts');
   check('9. the Studio subscription price is still resolved server-side', entitlementFn.includes('loadStudioPlans('));
   check('   the client can only send a plan id, not a price', entitlementFn.includes('plans[clean(body.planId, 40)]'));
-  check('   the free-generation counter path is untouched', entitlementFn.includes('checkAndConsumeTrial'));
+  /*
+   * Step 20 replaced the Studio counter path: the check-and-claim is now the
+   * atomic `claimStudioGeneration` (per email AND per device, run-id idempotent)
+   * instead of a read-then-insert inside the function. The greeting product is
+   * unaffected — this asserts the Studio path moved to the atomic one and that
+   * the function no longer carries a local counter implementation.
+   */
+  check(
+    '   the Studio counter path is the atomic device/email claim',
+    entitlementFn.includes('claimStudioGeneration') &&
+      !entitlementFn.includes('checkAndConsumeTrial'),
+  );
 
   /* ------------------------------------------------------------------ */
 

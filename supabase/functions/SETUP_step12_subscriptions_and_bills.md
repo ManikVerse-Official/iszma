@@ -21,7 +21,7 @@ supabase secrets set \
   RECEIPT_FROM_EMAIL="Ishmaverse <receipts@yourdomain.com>" \
   ADMIN_EMAILS="admin@ishmaverse.com" \
   ADMIN_NOTIFY_EMAIL="admin@ishmaverse.com" \
-  ADMIN_IPS="203.0.113.7" \
+  DEVICE_SECRET=<32+ random bytes> \
   PUBLIC_SITE_URL=https://ishmaverse.com \
   BRAND_LOGO_URL=https://ishmaverse.com/ishmaverse.png \
   SUPPORT_EMAIL=support@ishmaverse.com \
@@ -32,8 +32,8 @@ supabase secrets set \
 |--------|----------|
 | `RESEND_API_KEY` | Turns email on. Without it nothing is sent (logged as `skipped`). |
 | `RECEIPT_FROM_EMAIL` | The "from" line on every email. |
-| `ADMIN_EMAILS` | Emails that get unlimited, free ReportCard Studio access. |
-| `ADMIN_IPS` | IPs that get the same unlimited access (owner's office/home). |
+| `ADMIN_EMAILS` | Emails that get unlimited, free ReportCard Studio access — matched only against a VERIFIED Supabase session email, never a request body. |
+| `DEVICE_SECRET` | Signs Studio device tokens and device fingerprints. Required: without it free generations fail closed. |
 | `ADMIN_NOTIFY_EMAIL` | Where admin copies of bills/receipts/plan notices go. |
 | `PUBLIC_SITE_URL` | Base URL for buttons/links inside emails. |
 | `BRAND_LOGO_URL` | Logo printed on every bill/receipt. |
@@ -100,11 +100,18 @@ double-email anyone.
 ## 7. Free-try rules (all server-enforced)
 
 ```ts
-free_greeting:     { perEmail: 1, perIpEmails: 2, perIpTotal: 2  }
-studio_generation: { perEmail: 7, perIpEmails: 2, perIpTotal: 14 }
+free_greeting:     { perEmail: 1, perIpEmails: 2, perIpTotal: 2, windowHours: 24 }
+studio_generation: { perEmail: 7, perIpEmails: 0, perIpTotal: 0 }
 ```
 
-- Free tries are counted **per signed-in account** and also capped per network,
-  so clearing browser storage cannot mint another free run.
-- `ADMIN_EMAILS` / `ADMIN_IPS` bypass the limits entirely and never consume a
-  free try.
+- A free greeting card is one per email per rolling 24 hours (atomic:
+  `consume_free_greeting`, step 19).
+- ReportCard Studio allows **7 free generations per email AND per device**
+  (atomic: `consume_studio_generation`, step 20). Both are counted on the same
+  usage row, so changing the email on one device does not reset the device
+  allowance and vice versa.
+- The Studio per-IP caps are intentionally 0 (off): the device and email
+  counters replaced them, and 3 devices per fingerprint / 5 fingerprints per
+  email bound "clear storage and start again".
+- Admins (verified session + `admin_users`) bypass the limits entirely, are never
+  charged, and never consume a free try.

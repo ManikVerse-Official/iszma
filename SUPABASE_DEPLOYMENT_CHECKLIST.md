@@ -94,7 +94,8 @@ Also set `ReportCard Studio/.env` with the same `VITE_SUPABASE_URL` /
 | `STRIPE_SECRET_KEY` | Optional Stripe option | `sk_test_…` / `sk_live_…`. |
 | `IMGBB_API_KEY` | `upload-image` | Card photo hosting. |
 | `RESEND_API_KEY`, `RECEIPT_FROM_EMAIL`, `SUPPORT_EMAIL`, `BRAND_LOGO_URL` | Bills, receipts, renewal notices. |
-| `ADMIN_EMAILS`, `ADMIN_IPS`, `ADMIN_NOTIFY_EMAIL` | Admin access + admin copies. |
+| `ADMIN_EMAILS`, `ADMIN_NOTIFY_EMAIL` | Admin access + admin copies. `ADMIN_EMAILS` is matched **only** against the verified session email — there is no IP-based bypass any more. |
+| `DEVICE_SECRET` | **Required for Studio free generations.** 32+ random bytes. HMAC key for the signed device tokens and the device fingerprint. Without it the `entitlement` function fails closed: no free generation is granted. |
 | `MAINTENANCE_SECRET`, `RENEWAL_WARN_DAYS` | `subscription-maintenance` cron. |
 | `PUBLIC_SITE_URL` | "Manage or delete your card" links in email. |
 
@@ -181,10 +182,13 @@ Notes:
 | --- | --- |
 | Anonymous | Create a greeting card, read a shared card by id, record a page view. Nothing else. |
 | Authenticated (school account) | Own entitlements and usage; generate report cards client-side; no student data leaves the browser. |
-| Admin (email or IP allowlist, verified server-side) | Admin ops, audience analytics, game analytics, unlimited report cards. |
+| Admin (Supabase account in `admin_users`) | Admin ops, audience analytics, game analytics, unlimited report cards, playable Game Zone while it is disabled. |
 
-Admin identity is decided **server-side** from `ADMIN_EMAILS` / `ADMIN_IPS` and
-the verified JWT. There is no client-side admin flag to spoof.
+Admin identity is decided **server-side** by `_shared/adminAccess.ts`: the
+request's Supabase JWT is verified, then `admin_users` is read for that user id.
+`ADMIN_EMAILS` is honoured only when the email comes from that verified session.
+There is no client-side admin flag, no body email and no IP-based bypass to
+spoof — an IP is not an identity, and a claimed email is not a session.
 
 ---
 

@@ -1,36 +1,80 @@
-import { ChangeEvent } from 'react';
+import type { ChangeEvent, CSSProperties } from 'react';
 import { useAppStore } from '../store/appStore';
 import { Upload, Trash2, Save, Check } from 'lucide-react';
 import { fileToDataUrl } from '../services/photoMatcher';
 import { useState } from 'react';
 import { DEFAULT_THEME_ID, REPORT_CARD_THEMES } from '../themes';
+import SignatureExtractorDialog from '../components/SignatureExtractorDialog';
+
+/** Profile fields that hold an uploaded image. */
+type ImageField =
+  | 'logoDataUrl'
+  | 'principalSignDataUrl'
+  | 'teacherSignDataUrl'
+  | 'checkedBySignDataUrl'
+  | 'stampDataUrl';
+
+/**
+ * Signature and stamp photos are cleaned up before they are stored: the paper
+ * and its shadow are removed in the browser and only the ink is kept as a
+ * transparent PNG. Logos keep the plain upload. "Keep original" is always
+ * available in the dialog, so a photo the extractor cannot handle safely is
+ * never destroyed.
+ */
+const EXTRACTED_FIELDS: ReadonlySet<ImageField> = new Set<ImageField>([
+  'principalSignDataUrl',
+  'teacherSignDataUrl',
+  'checkedBySignDataUrl',
+  'stampDataUrl',
+]);
+
+/** Transparent preview so an extracted signature is obvious at a glance. */
+const CHECKERBOARD: CSSProperties = {
+  backgroundColor: '#ffffff',
+  backgroundImage:
+    'linear-gradient(45deg, #e2e8f0 25%, transparent 25%), linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e2e8f0 75%), linear-gradient(-45deg, transparent 75%, #e2e8f0 75%)',
+  backgroundSize: '12px 12px',
+  backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0',
+};
+
+const FIELD_LABELS: Partial<Record<ImageField, string>> = {
+  principalSignDataUrl: "Principal's Signature",
+  teacherSignDataUrl: "Teacher's Signature",
+  checkedBySignDataUrl: 'Checked by Signature',
+  stampDataUrl: 'School Stamp',
+};
 
 export default function SchoolProfile() {
   const profile = useAppStore((s) => s.schoolProfile);
   const setProfile = useAppStore((s) => s.setSchoolProfile);
   const [saved, setSaved] = useState(false);
+  const [extracting, setExtracting] = useState<{ field: ImageField; file: File } | null>(null);
 
   const update = (k: keyof typeof profile, v: string) => {
     setProfile({ [k]: v });
     setSaved(false);
   };
 
-  const onImage =
-    (k: 'logoDataUrl' | 'principalSignDataUrl' | 'teacherSignDataUrl' | 'checkedBySignDataUrl' | 'stampDataUrl') =>
-    async (e: ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const dataUrl = await fileToDataUrl(file);
-      setProfile({ [k]: dataUrl });
-      setSaved(false);
-    };
+  const onImage = (k: ImageField) => async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Allow picking the same file again after a cancel.
+    e.target.value = '';
+    if (!file) return;
 
-  const clearImage =
-    (k: 'logoDataUrl' | 'principalSignDataUrl' | 'teacherSignDataUrl' | 'checkedBySignDataUrl' | 'stampDataUrl') =>
-    () => {
-      setProfile({ [k]: undefined });
-      setSaved(false);
-    };
+    if (EXTRACTED_FIELDS.has(k)) {
+      setExtracting({ field: k, file });
+      return;
+    }
+
+    const dataUrl = await fileToDataUrl(file);
+    setProfile({ [k]: dataUrl });
+    setSaved(false);
+  };
+
+  const clearImage = (k: ImageField) => () => {
+    setProfile({ [k]: undefined });
+    setSaved(false);
+  };
 
   const handleSave = () => {
     setSaved(true);
@@ -198,14 +242,14 @@ export default function SchoolProfile() {
               value={profile.principalSignDataUrl}
               onChange={onImage('principalSignDataUrl')}
               onClear={clearImage('principalSignDataUrl')}
-              hint="Wide PNG on transparent background ideal."
+              hint="Upload a photo or scan — the paper background is removed automatically."
             />
             <ImagePicker
               label="Teacher's Signature"
               value={profile.teacherSignDataUrl}
               onChange={onImage('teacherSignDataUrl')}
               onClear={clearImage('teacherSignDataUrl')}
-              hint="Wide PNG on transparent background ideal."
+              hint="Upload a photo or scan — the paper background is removed automatically."
             />
             <ImagePicker
               label="Checked by Signature"
@@ -219,7 +263,7 @@ export default function SchoolProfile() {
               value={profile.stampDataUrl}
               onChange={onImage('stampDataUrl')}
               onClear={clearImage('stampDataUrl')}
-              hint="Square circular stamp, PNG preferred."
+              hint="Photograph or scan the stamp — only the imprint is kept."
               stamp
             />
           </div>
@@ -287,6 +331,26 @@ export default function SchoolProfile() {
           <CheckItem ok={Boolean(profile.stampDataUrl)} label="School Stamp" />
         </div>
       </div>
+
+      <SignatureExtractorDialog
+        open={extracting !== null}
+        kind={extracting?.field === 'stampDataUrl' ? 'stamp' : 'signature'}
+        label={extracting ? FIELD_LABELS[extracting.field] ?? 'Image' : 'Image'}
+        file={extracting?.file ?? null}
+        onCancel={() => setExtracting(null)}
+        onApply={(dataUrl) => {
+          if (!extracting) return;
+          setProfile({ [extracting.field]: dataUrl });
+          setSaved(false);
+          setExtracting(null);
+        }}
+        onKeepOriginal={(dataUrl) => {
+          if (!extracting) return;
+          setProfile({ [extracting.field]: dataUrl });
+          setSaved(false);
+          setExtracting(null);
+        }}
+      />
     </div>
   );
 }
@@ -321,9 +385,10 @@ function ImagePicker({
       <label className="label">{label}</label>
       <div className="flex gap-3">
         <label
-          className={`relative shrink-0 cursor-pointer rounded-lg border-2 border-dashed border-slate-300 hover:border-brand-400 bg-slate-50 flex items-center justify-center overflow-hidden ${stamp ? 'h-20 w-20' : 'h-20 w-32'}`}
+          className={`relative shrink-0 cursor-pointer rounded-lg border-2 border-dashed border-slate-300 hover:border-brand-400 flex items-center justify-center overflow-hidden ${stamp ? 'h-20 w-20' : 'h-20 w-32'}`}
+          style={CHECKERBOARD}
         >
-          <input type="file" className="hidden" accept="image/*" onChange={onChange} />
+          <input type="file" className="hidden" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={onChange} />
           {value ? (
             <img src={value} alt={label} className="h-full w-full object-contain" />
           ) : (
@@ -339,7 +404,13 @@ function ImagePicker({
             <label className="btn-secondary !py-1 !px-3 text-xs cursor-pointer">
               <Upload className="h-3.5 w-3.5" />
               Choose
-              <input type="file" className="hidden" accept="image/*" onChange={onChange} />
+              <input
+                type="file"
+                className="hidden"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                capture="environment"
+                onChange={onChange}
+              />
             </label>
             {value && (
               <button type="button" onClick={onClear} className="btn-ghost !py-1 !px-3 text-xs">

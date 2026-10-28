@@ -3,6 +3,42 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
+import {
+  getBridgedToken,
+  installAuthBridge,
+  subscribeToBridgedSession,
+} from './services/authBridge'
+import { setSessionToken } from './services/supabase'
+import { useEntitlement } from './store/entitlementStore'
+
+/*
+ * Admin session bridge.
+ *
+ * The Studio is embedded in Ishmaverse, and only Ishmaverse holds the real
+ * Supabase session. We ask the parent for it and attach it to our server calls,
+ * so the ENTITLEMENT function can verify who is calling and decide about admin
+ * access itself. No admin flag is ever derived in the browser — but every time
+ * the token changes we re-ask, because admin status is a server answer.
+ */
+installAuthBridge()
+setSessionToken(getBridgedToken())
+
+/*
+ * Re-ask the server as soon as the session actually arrives.
+ *
+ * The parent answers `ishmaverse:auth-request` asynchronously, so the first
+ * entitlement call of a page load can still be anonymous: admin status is only
+ * ever learned from the server, and without this the store kept its initial
+ * `isAdmin: false` until a generation was attempted — the dashboard therefore
+ * showed "7 of 7 free generations left" to the owner.
+ */
+subscribeToBridgedSession((session) => {
+  setSessionToken(session?.accessToken ?? null)
+  void useEntitlement.getState().refreshFromServer()
+})
+
+/* A reload with an already-stored session/account still needs one check. */
+void useEntitlement.getState().refreshFromServer()
 
 /*
  * `basename` follows the build's base path: "/" when hosted at the domain root

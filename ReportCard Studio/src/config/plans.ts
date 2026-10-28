@@ -3,7 +3,8 @@
  *
  * Prices are set by Ishmaverse. INR is the base price; the USD figure is the
  * international price shown to visitors outside India. All plans currently run
- * for six months. Admins never pay (see ADMIN_EMAILS).
+ * for six months. Admins never pay — admin access is granted by the server
+ * (verified session + `admin_users`), so no admin address lives in this bundle.
  *
  * IMPORTANT: the values below are only a fallback for an offline/dev build. The
  * authoritative prices live in the `studio_plan_prices` table (migration
@@ -32,11 +33,15 @@ export const PLAN_DURATION_MONTHS = 6;
 /** How many free report-card generations a signed-in account gets before paying. */
 export const FREE_USE_LIMIT = 7;
 
-/**
- * Emails that always get unlimited, free access (Ishmaverse staff / owner).
- * Compared case-insensitively. Add more addresses as needed.
+/*
+ * There is intentionally NO admin list in this bundle.
+ *
+ * Admin access is decided by the server: the `entitlement` function verifies the
+ * caller's Supabase session and reads `admin_users` (see
+ * supabase/functions/_shared/adminAccess.ts). A hardcoded address here could be
+ * read — and edited — by anyone with the deployed JavaScript, which is exactly
+ * what "never trust a client-side admin flag" means.
  */
-export const ADMIN_EMAILS: string[] = ['admin@ishmaverse.com'];
 
 export const STUDIO_PLANS: StudioPlan[] = [
   {
@@ -89,5 +94,4 @@ export const STUDIO_PLANS: StudioPlan[] = [
 export const getPlanById = (id?: string | null): StudioPlan | undefined =>
   id ? STUDIO_PLANS.find((plan) => plan.id === id) : undefined;
 
-export const isAdminEmail = (email: string): boolean =>
-  ADMIN_EMAILS.some((adminEmail) => adminEmail.toLowerCase() === email.trim().toLowerCase());
+

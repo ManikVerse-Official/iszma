@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppStore } from '../store/appStore';
 import { useEntitlement } from '../store/entitlementStore';
@@ -18,8 +19,20 @@ export default function Dashboard() {
   const students = useAppStore((s) => s.students);
   const validation = useAppStore((s) => s.validation);
   const gen = useAppStore((s) => s.generation);
-  const { isAdmin, planActive, planId, freeUsesRemaining, account } = useEntitlement();
+  const { isAdmin, planActive, planId, freeUsesRemaining, account, refreshFromServer } =
+    useEntitlement();
   const activePlan = getPlanById(planId);
+
+  /*
+   * The dashboard is where the owner lands, and admin status is a server answer
+   * (the bridged Ishmaverse session). Re-check on mount and whenever the
+   * signed-in email changes so the banner reflects it immediately instead of
+   * waiting for a generation attempt.
+   */
+  const accountEmail = account?.email ?? '';
+  useEffect(() => {
+    void refreshFromServer();
+  }, [accountEmail, refreshFromServer]);
 
   const schoolReady = Boolean(schoolProfile.schoolName && schoolProfile.academicSession && schoolProfile.examTerm);
   const dataReady = students.length > 0;
@@ -53,29 +66,33 @@ export default function Dashboard() {
       {/* Plan / usage summary */}
       <section className="card">
         <div className="card-body flex flex-wrap items-center justify-between gap-3 text-sm">
-          <div className="flex items-center gap-2 text-ink-700">
-            {isAdmin ? (
-              <span>
-                <strong>Admin access</strong> — unlimited report cards, always free.
-              </span>
-            ) : planActive && activePlan ? (
-              <span>
-                <strong>{activePlan.name}</strong> plan active — unlimited report cards for 6 months.
-              </span>
-            ) : (
-              <span>
-                <strong>{freeUsesRemaining}</strong> of {FREE_USE_LIMIT} free generations left ·
-                signed in as <strong>{account?.email}</strong>.
-              </span>
-            )}
-          </div>
-          {!isAdmin && !planActive && (
-            <Link
-              to="/pricing"
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 text-white px-4 py-2 text-xs font-semibold hover:bg-brand-700"
-            >
-              {freeUsesRemaining > 0 ? 'See plans' : 'Subscribe now'}
-            </Link>
+          {isAdmin ? (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-4 py-3 font-semibold w-full">
+              Admin: Unlimited
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-ink-700">
+                {planActive && activePlan ? (
+                  <span>
+                    <strong>{activePlan.name}</strong> plan active — unlimited report cards for 6 months.
+                  </span>
+                ) : (
+                  <span>
+                    <strong>{freeUsesRemaining}</strong> of {FREE_USE_LIMIT} free generations left ·
+                    signed in as <strong>{account?.email}</strong>.
+                  </span>
+                )}
+              </div>
+              {!planActive && (
+                <Link
+                  to="/pricing"
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 text-white px-4 py-2 text-xs font-semibold hover:bg-brand-700"
+                >
+                  {freeUsesRemaining > 0 ? 'See plans' : 'Subscribe now'}
+                </Link>
+              )}
+            </>
           )}
         </div>
       </section>

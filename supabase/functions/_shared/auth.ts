@@ -38,12 +38,9 @@ export const isAdminUser = async (userId: string | undefined): Promise<boolean> 
   return !error && Boolean(data);
 };
 
-/** Constant-time-ish hex string comparison to reduce signature timing leaks. */
-export const safeCompare = (a: string, b: string): boolean => {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-};
+/**
+ * Constant-time-ish hex string comparison to reduce signature timing leaks.
+ * Re-exported from `timingSafe.ts` so modules that must stay importable outside
+ * Deno (the Studio limit checks) can use it without pulling in supabase-js.
+ */
+export { safeCompare } from "./timingSafe.ts";

@@ -45,13 +45,18 @@ supabase functions deploy create-free-greeting
 ## 5. Free-use rules (edit in `_shared/plans.ts`)
 
 ```ts
-free_greeting:     { perEmail: 1, perIpEmails: 2, perIpTotal: 2  }
-studio_generation: { perEmail: 7, perIpEmails: 2, perIpTotal: 14 }
+free_greeting:     { perEmail: 1, perIpEmails: 2, perIpTotal: 2, windowHours: 24 }
+studio_generation: { perEmail: 7, perIpEmails: 0, perIpTotal: 0 }
 ```
 
-Generating in ReportCard Studio now requires a signed-in account, and an
-account that matches `ADMIN_EMAILS` (or is on `ADMIN_IPS`) is unlimited and
-never consumes free tries. See `SETUP_step12_subscriptions_and_bills.md`.
+Generating in ReportCard Studio now requires a signed-in account, and is counted
+per email AND per registered device (step 20) — the per-IP caps for the Studio are
+off, because the device counter replaced them.
+
+An account that is a VERIFIED admin (Supabase session + a row in `admin_users`,
+optionally an allow-listed `ADMIN_EMAILS` address from that session) is unlimited
+and never consumes free tries. There is no IP-based bypass: an address is not an
+identity. See `SETUP_step12_subscriptions_and_bills.md`.
 
 - **perEmail** — free claims allowed for one email address.
 - **perIpEmails** — distinct emails allowed from one IP.

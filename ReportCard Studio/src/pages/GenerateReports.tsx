@@ -40,9 +40,10 @@ export default function GenerateReports() {
 
   const [mode, setMode] = useState<'valid' | 'all'>('valid');
   const [showPaywall, setShowPaywall] = useState(false);
+  const [gateMessage, setGateMessage] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
-  const { canGenerate, consumeUse, refreshFromServer, freeUsesRemaining, isAdmin, planActive } =
+  const { beginGeneration, finishGeneration, refreshFromServer, freeUsesRemaining, isAdmin, planActive } =
     useEntitlement();
 
   // Pull the authoritative plan + free-use count from the server on mount (or
@@ -84,13 +85,20 @@ export default function GenerateReports() {
 
   const start = async () => {
     if (chosenStudents.length === 0) return;
-    // Refresh first so the gate uses the server's count, not a stale cache.
-    await refreshFromServer();
-    const gate = canGenerate();
+
+    /*
+     * The server decides, and a free generation is CLAIMED here — before a
+     * single page is rendered. A refusal (email allowance used, device
+     * allowance used, a generation already spent) stops the run instead of
+     * producing cards the user has not paid for.
+     */
+    const gate = await beginGeneration();
     if (!gate.allowed) {
+      setGateMessage(gate.reason ?? 'Subscribe to keep generating report cards.');
       setShowPaywall(true);
       return;
     }
+    setGateMessage('');
     resetGen();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -132,13 +140,14 @@ export default function GenerateReports() {
         zipBlobUrl: url,
         zipFileName: filename,
       });
-      // A successful run consumes one free generation (admins / active plans are
-      // unlimited — consumeUse is a no-op for them).
-      consumeUse();
+      // The run succeeded, so the claimed free generation stands.
+      await finishGeneration(gate.claimId, true);
     } catch (e) {
       setGen({
         status: 'error',
       });
+      // Nothing was produced: give the claimed generation back.
+      await finishGeneration(gate.claimId, false);
     } finally {
       abortRef.current = null;
     }
@@ -203,47 +212,47 @@ export default function GenerateReports() {
 
   return (
     <div className="space-y-4">
-      {/* Usage / plan banner — admins and subscribers see a reassurance note. */}
-      {!isAdmin && (
-        <div
-          className={clsx(
-            'rounded-xl border px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-2',
-            planActive
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : freeUsesRemaining > 0
-                ? 'bg-brand-50 border-brand-200 text-brand-800'
-                : 'bg-amber-50 border-amber-200 text-amber-800',
+      {/* Usage / plan banner */}
+      <div
+        className={clsx(
+          'rounded-xl border px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-2',
+          isAdmin || planActive
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : freeUsesRemaining > 0
+              ? 'bg-brand-50 border-brand-200 text-brand-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800',
+        )}
+      >
+        <span className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 shrink-0" />
+          {isAdmin ? (
+            <span><strong>Admin: Unlimited</strong></span>
+          ) : planActive ? (
+            <span>Your subscription is active — unlimited report cards.</span>
+          ) : freeUsesRemaining > 0 ? (
+            <span>
+              Free generations left:{' '}
+              <strong>
+                {freeUsesRemaining} of {FREE_USE_LIMIT}
+              </strong>{' '}
+              — usage is counted per generation run.
+            </span>
+          ) : (
+            <span>
+              Your {FREE_USE_LIMIT} free generations are used up. Subscribe to keep generating
+              report cards.
+            </span>
           )}
-        >
-          <span className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 shrink-0" />
-            {planActive ? (
-              <span>Your subscription is active — unlimited report cards.</span>
-            ) : freeUsesRemaining > 0 ? (
-              <span>
-                Free generations left:{' '}
-                <strong>
-                  {freeUsesRemaining} of {FREE_USE_LIMIT}
-                </strong>{' '}
-                — usage is counted per generation run.
-              </span>
-            ) : (
-              <span>
-                Your {FREE_USE_LIMIT} free generations are used up. Subscribe to keep generating
-                report cards.
-              </span>
-            )}
-          </span>
-          {!planActive && (
-            <Link
-              to="/pricing"
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 text-white px-4 py-2 text-xs font-semibold hover:bg-brand-700"
-            >
-              {freeUsesRemaining > 0 ? 'View plans' : 'Subscribe now'}
-            </Link>
-          )}
-        </div>
-      )}
+        </span>
+        {!isAdmin && !planActive && (
+          <Link
+            to="/pricing"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 text-white px-4 py-2 text-xs font-semibold hover:bg-brand-700"
+          >
+            {freeUsesRemaining > 0 ? 'View plans' : 'Subscribe now'}
+          </Link>
+        )}
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -533,8 +542,12 @@ export default function GenerateReports() {
             </div>
             <h3 className="text-lg font-semibold text-ink-900">Free generations used up</h3>
             <p className="text-sm text-ink-600 mt-1">
-              You've used all {FREE_USE_LIMIT} free report-card generations. Subscribe to a plan for
-              unlimited report cards for 6 months.
+              {gateMessage ||
+                `You've used all ${FREE_USE_LIMIT} free report-card generations. Subscribe to a plan for unlimited report cards for 6 months.`}
+            </p>
+            <p className="text-xs text-ink-500 mt-2">
+              Free generations are counted per email and per device, so signing in with another
+              address (or clearing this browser) does not reset them.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 mt-5">
               <Link

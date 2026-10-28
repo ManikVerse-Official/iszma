@@ -15,11 +15,15 @@ import {
   SIGNATURE_TO_FOOTER_GAP,
   colorsFromPalette,
   drawFooterAndFrame,
+  drawImageContained,
   drawInfoGrid,
   drawLogoBox,
   drawPhotoBox,
   drawProgressBar,
   drawSignatureBlock,
+  SIGNATURE_BOX_H,
+  SIGNATURE_BOX_W,
+  STAMP_BOX,
   drawTextBlock,
   drawWrapped,
   fillRect,
@@ -1023,19 +1027,19 @@ function drawSignatures(
     doc.setDrawColor(...colors.primary);
     doc.setLineWidth(0.5);
     doc.line(x, lineY, x + width, lineY);
+    /* Same fitted drawing as the classic card: transparency kept, no stretch. */
     if (spec.image) {
-      try {
-        doc.addImage(spec.image, 'PNG', x + width / 2 - 13, lineY - 12, 26, 11, undefined, 'FAST');
-      } catch {
-        /* ignore broken signature images */
-      }
+      drawImageContained(doc, spec.image, x + width / 2 - 13, lineY - 12, SIGNATURE_BOX_W, SIGNATURE_BOX_H);
     }
     if (spec.stamp) {
-      try {
-        doc.addImage(spec.stamp, 'PNG', x + width - 18, lineY - 22, 18, 18, undefined, 'FAST');
-      } catch {
-        /* ignore */
-      }
+      drawImageContained(
+        doc,
+        spec.stamp,
+        x + width - STAMP_BOX,
+        lineY - STAMP_BOX - 4,
+        STAMP_BOX,
+        STAMP_BOX,
+      );
     }
     drawWrapped(doc, spec.name || '', x + width / 2, lineY + 3.4, width - 1, {
       size: mmToPt(TYPE_MM.signatureName),

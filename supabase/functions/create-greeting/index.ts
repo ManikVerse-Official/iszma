@@ -11,8 +11,9 @@ import {
 import {
   createAdminClient,
   getUserFromRequest,
-  isAdminUser,
 } from "../_shared/auth.ts";
+
+import { resolveAdminAccess } from "../_shared/adminAccess.ts";
 
 import {
   expectedAmount,
@@ -30,7 +31,6 @@ import {
 } from "../_shared/payments.ts";
 
 
-const ADMIN_EMAIL = "deym85810@gmail.com";
 
 const GREETING_LIFESPAN_HOURS = 48;
 const GREETING_LIFESPAN_MS =
@@ -476,50 +476,16 @@ serve(async (req: Request) => {
        DETERMINE ADMIN
     ------------------------------------------------------- */
 
-    let admin = false;
-
-
-    if (user?.id) {
-
-      /*
-       * Method 1:
-       * admin_users table
-       */
-      try {
-
-        admin =
-          await isAdminUser(
-            user.id
-          );
-
-      } catch (adminError) {
-
-        console.error(
-          "isAdminUser failed:",
-          adminError
-        );
-
-      }
-
-
-      /*
-       * Method 2:
-       * Verified Supabase Auth email
-       *
-       * This is NOT client_email.
-       *
-       * It comes from the verified Auth JWT.
-       */
-      if (
-        user.email &&
-        user.email
-          .toLowerCase()
-          .trim() === ADMIN_EMAIL
-      ) {
-        admin = true;
-      }
-
-    }
+    /*
+     * ONE central, server-verified admin check — `_shared/adminAccess.ts`.
+     *
+     * It verifies the Supabase JWT and reads `admin_users`; the request body
+     * (including client_email) is never consulted. The admin address that used
+     * to be hardcoded in this file is gone: the allowlist is a deployment
+     * secret, matched only against the VERIFIED session email.
+     */
+    const access = await resolveAdminAccess(req, supabase);
+    const admin = access.isAdmin;
 
 
     /* -------------------------------------------------------

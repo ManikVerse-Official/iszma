@@ -28,6 +28,8 @@ import {
   freeGreetingStatus,
   releaseFreeGreetingClaim,
 } from "../_shared/freeGreeting.ts";
+import { resolveAdminAccess } from "../_shared/adminAccess.ts";
+import { FREE_LIMITS } from "../_shared/plans.ts";
 
 const FREE_THEME_ID = "free-basic-wish";
 const GREETING_LIFESPAN_MS = 48 * 60 * 60 * 1000;
@@ -107,11 +109,32 @@ serve(async (req: Request) => {
     }
 
     /*
-     * Claim the free slot FIRST. Nothing is written unless the database atomically
-     * confirms that this email has not used its free card in the last 24 hours and
-     * this network still has allowance.
+     * Owner/staff use Ishmaverse without charges or usage limits. The check is the
+     * shared server-side one (`_shared/adminAccess.ts`), so it depends on a
+     * verified Supabase session and `admin_users` — never on the email in this
+     * request body.
+     *
+     * An admin claim is NOT written to `usage_events`, so it neither consumes
+     * their free card nor blocks a normal user behind the same network.
      */
-    const decision = await claimFreeGreeting(supabase, clientEmail, ip);
+    const access = await resolveAdminAccess(req, supabase);
+    const freeLimit = FREE_LIMITS.free_greeting;
+
+    const decision: {
+      allowed: boolean;
+      remaining: number;
+      claimId?: string | null;
+      code?: string;
+      message?: string;
+      retryAfterSeconds?: number;
+    } = access.isAdmin
+      ? { allowed: true, remaining: Math.max(0, freeLimit?.perEmail ?? 1) }
+      : await claimFreeGreeting(supabase, clientEmail, ip);
+
+    if (access.isAdmin) {
+      console.log("Free greeting: verified admin, limit bypassed");
+    }
+
     if (!decision.allowed) {
       return failure(
         req,

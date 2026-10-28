@@ -341,6 +341,64 @@ export function drawStar(
 
 /* ── signatures, footer, frame ────────────────────────────────────────── */
 
+/** Signature image box (mm) above the role rule — the historical card geometry. */
+export const SIGNATURE_BOX_W = 26;
+export const SIGNATURE_BOX_H = 11;
+/** Stamp image box (mm), anchored above the principal's rule. */
+export const STAMP_BOX = 18;
+
+/** The real image format behind a data URL (never guessed from the field name). */
+export function imageFormatFromDataUrl(dataUrl: string): 'PNG' | 'JPEG' | 'WEBP' {
+  if (/^data:image\/png/i.test(dataUrl)) return 'PNG';
+  if (/^data:image\/webp/i.test(dataUrl)) return 'WEBP';
+  return 'JPEG';
+}
+
+/**
+ * Draw a data-URL image contained (not stretched) inside an exact box.
+ *
+ * Returns false when the image cannot be decoded, so callers can fall back to
+ * their own placeholder. A PNG keeps its alpha channel here, which is what makes
+ * an extracted signature sit on the card's paper instead of on a white slab.
+ *
+ * The format is read from the data URL itself: handing JPEG bytes to jsPDF's
+ * PNG decoder throws (and the old code swallowed that, so a camera photo simply
+ * vanished from the card).
+ */
+export function drawImageContained(
+  doc: jsPDF,
+  dataUrl: string | undefined,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): boolean {
+  if (!dataUrl) return false;
+  const size = imageSizeFromDataUrl(dataUrl);
+  let drawW = w;
+  let drawH = h;
+  if (size) {
+    const ratio = Math.min(w / size.width, h / size.height);
+    drawW = size.width * ratio;
+    drawH = size.height * ratio;
+  }
+  try {
+    doc.addImage(
+      dataUrl,
+      imageFormatFromDataUrl(dataUrl),
+      x + (w - drawW) / 2,
+      y + (h - drawH) / 2,
+      drawW,
+      drawH,
+      undefined,
+      'FAST',
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function drawSignatureBlock(
   doc: jsPDF,
   opts: {
@@ -361,20 +419,13 @@ export function drawSignatureBlock(
   doc.setLineWidth(0.2);
   doc.line(x, lineY, x + width, lineY);
 
-  if (image) {
-    try {
-      doc.addImage(image, 'PNG', x + width / 2 - 13, lineY - 12, 26, 11, undefined, 'FAST');
-    } catch {
-      /* ignore broken signature images */
-    }
-  }
-  if (stamp) {
-    try {
-      doc.addImage(stamp, 'PNG', x + width - 18, lineY - 22, 18, 18, undefined, 'FAST');
-    } catch {
-      /* ignore */
-    }
-  }
+  /*
+   * Signature and stamp boxes are unchanged; the images inside them are now
+   * fitted instead of stretched, so a tall stamp stays circular and a signature
+   * keeps its own proportions.
+   */
+  if (image) drawImageContained(doc, image, x + width / 2 - 13, lineY - 12, SIGNATURE_BOX_W, SIGNATURE_BOX_H);
+  if (stamp) drawImageContained(doc, stamp, x + width - STAMP_BOX, lineY - STAMP_BOX - 4, STAMP_BOX, STAMP_BOX);
 
   drawWrapped(doc, name || '', x + width / 2, lineY + 3.6, width - 1, {
     size: mmToPt(TYPE_MM.signatureName),
@@ -533,36 +584,7 @@ export function drawPhotoBox(
 ): void {
   strokeRect(doc, x, y, w, h, colors.line, 0.25);
 
-  if (dataUrl) {
-    const size = imageSizeFromDataUrl(dataUrl);
-    let drawW = w;
-    let drawH = h;
-    if (size) {
-      const ratio = Math.min(w / size.width, h / size.height);
-      drawW = size.width * ratio;
-      drawH = size.height * ratio;
-    }
-    const format = /^data:image\/png/i.test(dataUrl)
-      ? 'PNG'
-      : /^data:image\/webp/i.test(dataUrl)
-        ? 'WEBP'
-        : 'JPEG';
-    try {
-      doc.addImage(
-        dataUrl,
-        format,
-        x + (w - drawW) / 2,
-        y + (h - drawH) / 2,
-        drawW,
-        drawH,
-        undefined,
-        'FAST',
-      );
-      return;
-    } catch {
-      /* fall through to the placeholder */
-    }
-  }
+  if (drawImageContained(doc, dataUrl, x, y, w, h)) return;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);

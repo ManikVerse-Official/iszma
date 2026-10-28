@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
+import { isSupabaseConfigured, supabase } from '../services/supabase';
 
 /**
  * Where the embedded ReportCard Studio build lives.
@@ -16,6 +17,15 @@ const REPORT_CARD_URL = (() => {
   return '/reportcard/';
 })();
 
+/** The origin that is allowed to receive the session, and to ask for it. */
+const STUDIO_ORIGIN = (() => {
+  try {
+    return new URL(REPORT_CARD_URL, window.location.href).origin;
+  } catch {
+    return window.location.origin;
+  }
+})();
+
 /**
  * Dedicated, full-width view for ReportCard Studio.
  *
@@ -24,9 +34,64 @@ const REPORT_CARD_URL = (() => {
  * That keeps its internal routes (`/dashboard`, `/import`, …) fully isolated —
  * no route collision with Ishmaverse, no missing Tailwind classes, and no blank
  * screen — while still sitting inside the Ishmaverse chrome.
+ *
+ * Session handoff: the Studio has no sign-in of its own, and Ishmaverse is where
+ * the real Supabase session lives. This component shares that session with the
+ * iframe so the `entitlement` function can verify who is calling (and therefore
+ * whether they are an admin). The token is posted only to the Studio's own
+ * origin, only on request or on a change, and the SERVER still verifies it — so
+ * this is a transport, not a permission.
  */
 export const ReportCardStudio: React.FC = () => {
   const [loaded, setLoaded] = useState(false);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+
+  const sendSession = useCallback(async () => {
+    const frame = frameRef.current;
+    if (!frame?.contentWindow || !isSupabaseConfigured()) return;
+    try {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+      frame.contentWindow.postMessage(
+        session?.access_token
+          ? {
+              type: 'ishmaverse:auth',
+              accessToken: session.access_token,
+              email: session.user?.email ?? '',
+            }
+          : { type: 'ishmaverse:auth-cleared' },
+        STUDIO_ORIGIN,
+      );
+    } catch {
+      /* No session available — the Studio simply keeps its anonymous identity. */
+    }
+  }, []);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== STUDIO_ORIGIN) return;
+      if ((event.data as { type?: string } | null)?.type === 'ishmaverse:auth-request') {
+        void sendSession();
+      }
+    };
+    window.addEventListener('message', onMessage);
+
+    /* Keep the shared token fresh: a refreshed token has a new expiry, and a
+     * sign-out must be reflected inside the Studio too. */
+    const subscription = supabase.auth.onAuthStateChange(() => {
+      void sendSession();
+    });
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void sendSession();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      window.removeEventListener('message', onMessage);
+      document.removeEventListener('visibilitychange', onVisible);
+      subscription.data.subscription.unsubscribe();
+    };
+  }, [sendSession]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
@@ -66,14 +131,17 @@ export const ReportCardStudio: React.FC = () => {
         )}
 
         <iframe
+          ref={frameRef}
           src={REPORT_CARD_URL}
           title="ReportCard Studio"
-          onLoad={() => setLoaded(true)}
+          onLoad={() => {
+            setLoaded(true);
+            void sendSession();
+          }}
           allow="clipboard-write; downloads"
           className="absolute inset-0 w-full h-full border-0 bg-white"
         />
       </div>
-
     </div>
   );
 };

@@ -18,6 +18,8 @@
     "check:admin-joy-dock": "node scripts/browser-check-admin-joy-dock.mjs",
     "check:pair3balls": "node scripts/check-pair3balls.mjs",
     "check:cors": "cd \"ReportCard Studio\" && npx --no-install jiti ../scripts/check-cors.ts",
+    "check:signature": "cd \"ReportCard Studio\" && npx --no-install jiti ../scripts/check-signature-extraction.ts",
+    "check:studio-limits": "cd \"ReportCard Studio\" && npx --no-install jiti ../scripts/check-studio-limits.ts",
     "check:greeting-limits": "cd \"ReportCard Studio\" && npx --no-install jiti ../scripts/check-greeting-limits.ts",
     "check:greeting-payments": "cd \"ReportCard Studio\" && npx --no-install jiti ../scripts/check-greeting-payments.ts",
     "check:subscription-payments": "cd \"ReportCard Studio\" && npx --no-install jiti ../scripts/check-subscription-payments.ts",

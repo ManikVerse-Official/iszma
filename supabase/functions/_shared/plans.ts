@@ -109,6 +109,15 @@ export const FREE_LIMITS: Record<string, FreeLimit> = {
    * concurrent requests cannot both claim the same slot.
    */
   free_greeting: { perEmail: 1, perIpEmails: 2, perIpTotal: 2, windowHours: 24 },
-  // ReportCard Studio: seven free generations per email, capped per network.
-  studio_generation: { perEmail: 7, perIpEmails: 2, perIpTotal: 14 },
+  /*
+   * ReportCard Studio: SEVEN free generations per email AND per device, enforced
+   * atomically by `consume_studio_generation` (migration 20261026_step20).
+   *
+   * The per-IP caps are deliberately 0 (off) here: the device identity replaced
+   * them, because a per-IP cap punished a whole school behind one NAT and was
+   * redundant once each browser is counted. Changing the email keeps draining
+   * the device allowance and vice versa; the fingerprint caps in
+   * `_shared/studioLimits.ts` cover "clear storage and start again".
+   */
+  studio_generation: { perEmail: 7, perIpEmails: 0, perIpTotal: 0 },
 };

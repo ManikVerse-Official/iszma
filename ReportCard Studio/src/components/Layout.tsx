@@ -116,7 +116,7 @@ export default function Layout() {
                   )}
                 >
                   {isAdmin
-                    ? 'Admin · unlimited'
+                    ? 'Admin: Unlimited'
                     : planActive
                       ? 'Plan active · unlimited'
                       : `${freeUsesRemaining} of ${FREE_USE_LIMIT} free left`}

@@ -1,20 +1,26 @@
 /**
- * Admin recognition for the free-use limits.
+ * Owner/staff email helpers.
  *
- * An owner/staff account gets unlimited use. Two independent signals are
- * accepted, both of them server-side and neither of them trusted from the
- * request body:
- *   • the email address  — `ADMIN_EMAILS` (comma separated). Defaults to
- *     admin@ishmaverse.com so the tool works out of the box;
- *   • the client IP      — `ADMIN_IPS` (comma separated). Useful when the owner
- *     signs in from a fixed office/home connection, or uses an email that is
- *     not the main admin one.
+ * Authentication lives in `adminAccess.ts`: it verifies the caller's Supabase
+ * JWT and reads `admin_users`. This module only answers two questions that are
+ * not authentication at all:
  *
- * Set them with:
+ *   • which addresses receive the owner copies of receipts / notices
+ *     (`ADMIN_NOTIFY_EMAIL`, falling back to `ADMIN_EMAILS`);
+ *   • whether an email — that the caller MUST have obtained from a verified
+ *     session or a database row, never from a request body — is on the staff
+ *     allowlist.
+ *
+ * The previous `isAdminRequest(email, ip)` helper is deliberately gone: it
+ * granted unlimited use to whoever sent `admin@ishmaverse.com` in the body, and
+ * to every visitor behind an allow-listed IP address. Admin access is now
+ * identity-based only (see `resolveAdminAccess`).
+ *
  *   supabase secrets set ADMIN_EMAILS="you@school.com,admin@ishmaverse.com" \
- *                        ADMIN_IPS="203.0.113.7" \
  *                        ADMIN_NOTIFY_EMAIL="you@school.com"
  */
+
+import { adminEmailAllowlist, isAllowlistedAdminEmail } from "./adminPolicy.ts";
 
 const parseList = (value: string | undefined): string[] =>
   (value ?? "")
@@ -22,26 +28,21 @@ const parseList = (value: string | undefined): string[] =>
     .map((entry) => entry.trim())
     .filter(Boolean);
 
-const ADMIN_EMAILS: string[] = (() => {
-  const configured = parseList(Deno.env.get("ADMIN_EMAILS")).map((e) => e.toLowerCase());
-  return configured.length > 0 ? configured : ["admin@ishmaverse.com"];
-})();
-
-const ADMIN_IPS: string[] = parseList(Deno.env.get("ADMIN_IPS"));
-
 /** Where copies of customer receipts and any subscription warnings are sent. */
 export const adminNotifyEmails = (): string[] => {
   const notify = parseList(Deno.env.get("ADMIN_NOTIFY_EMAIL")).map((e) => e.toLowerCase());
-  return notify.length > 0 ? notify : ADMIN_EMAILS;
+  return notify.length > 0 ? notify : adminEmailAllowlist();
 };
 
-export const adminEmails = (): string[] => [...ADMIN_EMAILS];
+/** The staff allowlist (lower-cased). Never use it as an authentication result. */
+export const adminEmails = (): string[] => adminEmailAllowlist();
 
-export const isAdminEmail = (email: string): boolean =>
-  Boolean(email) && ADMIN_EMAILS.includes(email.trim().toLowerCase());
-
-export const isAdminIp = (ip: string): boolean => Boolean(ip) && ADMIN_IPS.includes(ip.trim());
-
-/** True when this request belongs to the owner/staff and bypasses free limits. */
-export const isAdminRequest = (email: string, ip: string): boolean =>
-  isAdminEmail(email) || isAdminIp(ip);
+/**
+ * True when a VERIFIED email is on the staff allowlist.
+ *
+ * Only pass an email that came from a verified Supabase session (or from
+ * `admin_users`); passing a request-body address would reintroduce the bypass
+ * this replaced.
+ */
+export const isAdminEmail = (verifiedEmail: string): boolean =>
+  isAllowlistedAdminEmail(verifiedEmail);
