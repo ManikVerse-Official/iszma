@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Bot, Send, ShieldCheck, ShieldAlert, Check, X } from 'lucide-react';
 import { ADMIN_JOY_EXAMPLES } from './admin/adminJoyPrompts';
+import { AdminJoyDiagnostics } from './admin/AdminJoyDiagnostics';
 import { useAdminJoySession } from './admin/useAdminJoyConsole';
 
 /**
@@ -82,6 +83,11 @@ const AdminJoy: React.FC = () => {
                     <a
                       key={`${link.href}-${link.label}`}
                       href={link.href}
+                      /* Admin routes stay in the app; the WhatsApp handoff opens
+                       * in its own tab so the console is not navigated away. */
+                      {...(/^https?:\/\//i.test(link.href)
+                        ? { target: '_blank', rel: 'noopener noreferrer' }
+                        : {})}
                       className="rounded-lg border border-neon-purple/40 px-2.5 py-1 text-[11px] text-neon-purple hover:bg-neon-purple/10"
                     >
                       {link.label}
@@ -181,6 +187,13 @@ const AdminJoy: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/*
+       * System-wide checks. Read-only: it reports what is actually verifiable
+       * (browser + server), and treats an unreachable server as a failure rather
+       * than assuming a reload fixed anything.
+       */}
+      <AdminJoyDiagnostics />
     </div>
   );
 };

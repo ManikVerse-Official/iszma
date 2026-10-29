@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle } from '../services/seo';
 import {
   Home,
   Heart,
@@ -279,6 +281,13 @@ export const AdminDashboard: React.FC = () => {
     deleteProduct,
   } = useCatalog();
 
+  usePageMeta({
+    title: pageTitle('Admin Dashboard'),
+    description: 'Private isZma administration.',
+    path: '/admin/dashboard',
+    noindex: true,
+  });
+
   const [searchParams, setSearchParams] = useSearchParams();
   /* A guided link (`?tab=greetings`) opens that tab directly. */
   const [activeTab, setActiveTab] = useState<Tab>(() => tabFromQuery(searchParams.get('tab')));
@@ -508,7 +517,7 @@ export const AdminDashboard: React.FC = () => {
 
   const handleGenerateCard = () => {
     setCustomerName('Admin');
-    setCustomerEmail('admin@ishmaverse.com');
+    setCustomerEmail('admin@example.com');
     navigate('/create-greeting');
   };
 

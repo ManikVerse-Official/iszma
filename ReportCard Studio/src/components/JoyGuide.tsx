@@ -230,7 +230,7 @@ export default function JoyGuide() {
               <div className="min-w-0">
                 <div className="text-sm font-bold text-white leading-tight">Joy</div>
                 <div className="text-[11px] text-white/70 leading-tight truncate">
-                  ReportCard Studio guide · Ishmaverse
+                  ReportCard Studio guide · isZma
                 </div>
               </div>
             </div>

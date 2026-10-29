@@ -59,14 +59,19 @@ try {
   const ids = GAME_LIBRARY.map((g) => g.id);
   check('game ids are unique', new Set(ids).size === ids.length, ids.join(','));
 
-  /* ── 2. Exactly the three modes ───────────────────────────────── */
-  check('Pair-3Balls has exactly three modes', PAIR_3_BALLS.modes.length === 3,
+  /* ── 2. Exactly the four modes ───────────────────────────────── */
+  check('Pair-3Balls has exactly four modes', PAIR_3_BALLS.modes.length === 4,
     String(PAIR_3_BALLS.modes.length));
-  check('the modes are computer / private / world',
-    PAIR_3_BALLS.modes.map((m) => m.id).join(',') === 'computer,private,world',
+  check('the modes are computer / local / private / world',
+    PAIR_3_BALLS.modes.map((m) => m.id).join(',') === 'computer,local,private,world',
     PAIR_3_BALLS.modes.map((m) => m.id).join(','));
   check('Play vs Computer works offline',
     PAIR_3_BALLS.modes.find((m) => m.id === 'computer')?.online === false);
+  check('two players on one device works offline',
+    PAIR_3_BALLS.modes.find((m) => m.id === 'local')?.online === false);
+  check('the local mode is labelled as an offline, same-device mode',
+    /one device/i.test(PAIR_3_BALLS.modes.find((m) => m.id === 'local')?.title ?? '') &&
+      Boolean(PAIR_3_BALLS.modes.find((m) => m.id === 'local')?.blurb?.trim()));
   check('Private Room is an online mode',
     PAIR_3_BALLS.modes.find((m) => m.id === 'private')?.online === true);
   check('World Match is an online mode',
@@ -147,4 +152,4 @@ if (problems.length) {
   for (const problem of problems) console.log(`  • ${problem}`);
   process.exit(1);
 }
-console.log('\n✓ Game Zone library OK — one registered game, three modes, offline play intact.');
+console.log('\n✓ Game Zone library OK — one registered game, four modes, offline play intact.');

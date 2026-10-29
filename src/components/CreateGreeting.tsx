@@ -6,6 +6,8 @@ import { useGreeting } from '../context/GreetingContext';
 import { SmartImage } from './SmartImage';
 import { buildGreetingUrl, createGreetingCard } from '../services/greetingService';
 import { uploadCardImageUrl } from '../services/imageUpload';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle } from '../services/seo';
 
 type Step = 1 | 2 | 3 | 4 | 5;
 
@@ -21,6 +23,15 @@ export const CreateGreeting = () => {
   const [cardLink, setCardLink] = useState<string | null>(null);
   const { customerName, isAdmin, adminLoading } = useGreeting();
   const navigate = useNavigate();
+
+  /* Admin-only legacy wizard; the public entry point is the greetings section. */
+  usePageMeta({
+    title: pageTitle('Create a Digital Greeting Card'),
+    description:
+      'Design an animated digital greeting card, add a message and music, then share a private link that stays live for 48 hours.',
+    path: '/create-greeting',
+    noindex: true,
+  });
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

@@ -134,7 +134,7 @@ export default function Pricing() {
       </section>
 
       <p className="text-xs text-ink-500 text-center">
-        Prices are set by Ishmaverse (this page shows the live server prices). Each plan shows its own
+        Prices are set by isZma (this page shows the live server prices). Each plan shows its own
         billing period. You can keep using the {FREE_USE_LIMIT} free generations before subscribing.
       </p>
     </div>

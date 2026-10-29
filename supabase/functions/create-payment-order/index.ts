@@ -107,7 +107,7 @@ serve(async (req: Request) => {
 
       if (body.provider === "stripe") {
         const origin = (req.headers.get("origin") ?? "").replace(/\/$/, "");
-        const base = origin || "https://ishmaverse.com";
+        const base = origin || "https://ishmaverse.vercel.app";
         const session = await createStripeCheckoutSession(
           amount,
           description,
@@ -179,7 +179,7 @@ serve(async (req: Request) => {
         );
       }
 
-      const order = await createRazorpayOrder(amount, `ishmaverse_${themeId}`.slice(0, 40), {
+      const order = await createRazorpayOrder(amount, `iszma_${themeId}`.slice(0, 40), {
         theme_id: themeId,
       });
 
@@ -200,11 +200,11 @@ serve(async (req: Request) => {
     // International → Stripe (hosted card checkout) when requested.
     if (body.provider === "stripe") {
       const origin = (req.headers.get("origin") ?? "").replace(/\/$/, "");
-      const base = origin || "https://ishmaverse.com";
+      const base = origin || "https://ishmaverse.vercel.app";
 
       const session = await createStripeCheckoutSession(
         amount,
-        `Ishmaverse greeting card (${themeId})`,
+        `isZma greeting card (${themeId})`,
         `${base}/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
         `${base}/section/greetings`,
       );
@@ -224,7 +224,7 @@ serve(async (req: Request) => {
     }
 
     // International default → PayPal.
-    const order = await createPayPalOrder(amount, `Ishmaverse greeting card (${themeId})`);
+    const order = await createPayPalOrder(amount, `isZma greeting card (${themeId})`);
     return jsonResponse(
       {
         success: true,

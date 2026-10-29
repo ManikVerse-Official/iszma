@@ -32,9 +32,13 @@ import { clientIp, studioPlanStatus, studioState } from "../_shared/entitlement.
 import { FREE_LIMITS, loadStudioPlans } from "../_shared/plans.ts";
 import { resolveAdminAccess } from "../_shared/adminAccess.ts";
 import { adminNotifyEmails } from "../_shared/admin.ts";
-import { isEmailConfigured, sendEmail } from "../_shared/email.ts";
+import { isEmailConfigured, sendEmail, sendEmailWithRetry } from "../_shared/email.ts";
 import { subscriptionEmail } from "../_shared/templates.ts";
-import { verifyPayPalPayment, verifyRazorpayPayment } from "../_shared/payments.ts";
+import {
+  verifyPayPalPayment,
+  verifyRazorpayPayment,
+  verifyStripePayment,
+} from "../_shared/payments.ts";
 import {
   claimStudioGeneration,
   fingerprintFor,
@@ -247,18 +251,68 @@ serve(async (req: Request) => {
        * and the amount is re-checked server-side.
        */
       if (isPaid && !admin) {
-        if (!proof?.provider || !proof?.order_id || !proof?.payment_id) {
+        /*
+         * Stripe proves a session id, not an order id; requiring `order_id` for
+         * every provider made the hosted-card flow impossible to activate even
+         * though `create-payment-order` offers it.
+         */
+        const hasProof =
+          Boolean(proof?.provider) &&
+          Boolean(proof?.payment_id) &&
+          (proof.provider === "stripe" || Boolean(proof?.order_id));
+        if (!hasProof) {
           return errorResponse("Payment is required to activate this plan", 402, req);
         }
-        // Prevent replay
+
+        /*
+         * REPLAY GUARD.
+         *
+         * A repeated callback must not extend the plan and must not be reported
+         * as a failed purchase. When the payment is already in the ledger and the
+         * subscription it bought is still active, this is the same successful
+         * order — answer 200 with the existing state; never 409.
+         */
         const lookupKey = String(proof.payment_id).trim();
         const { data: existingTx } = await supabase
           .from("transactions")
-          .select("*")
+          .select("payment_id")
           .eq("payment_id", lookupKey)
           .maybeSingle();
         if (existingTx) {
-          return errorResponse("This payment has already been used", 409, req);
+          const { data: currentSub } = await supabase
+            .from("studio_subscriptions")
+            .select("plan_id, status, expires_at")
+            .eq("email", email)
+            .maybeSingle();
+          const stillActive =
+            currentSub?.status === "active" && new Date(currentSub.expires_at) > new Date();
+          if (stillActive) {
+            return jsonResponse(
+              {
+                success: true,
+                planActive: true,
+                planId: currentSub.plan_id,
+                expiresAt: currentSub.expires_at,
+                alreadyActive: true,
+                duplicate: true,
+                isAdmin: admin,
+              },
+              200,
+              req,
+            );
+          }
+          /*
+           * No subscription row at all: the first attempt recorded the payment
+           * and then failed before activating. Falling through re-verifies the
+           * SAME captured payment and completes the activation, so the buyer is
+           * not left paid-but-inactive. A row that exists but has expired means
+           * the payment was already consumed — that stays a 409 (no free
+           * reactivation of a finished plan).
+           */
+          if (currentSub) {
+            return errorResponse("This payment has already been used", 409, req);
+          }
+          console.warn("Completing a paid subscription whose activation was interrupted");
         }
 
         let settlement: any;
@@ -267,6 +321,8 @@ serve(async (req: Request) => {
             settlement = await verifyRazorpayPayment(proof, plan.priceInr);
           } else if (proof.provider === "paypal") {
             settlement = await verifyPayPalPayment(proof, plan.priceUsd);
+          } else if (proof.provider === "stripe") {
+            settlement = await verifyStripePayment(proof, plan.priceUsd);
           } else {
             return errorResponse("Unsupported payment provider", 400, req);
           }
@@ -282,28 +338,30 @@ serve(async (req: Request) => {
           return errorResponse("Payment amount does not match the selected plan", 400, req);
         }
         if (
-          proof.provider === "paypal" &&
+          (proof.provider === "paypal" || proof.provider === "stripe") &&
           Math.abs((settlement.amount || 0) - plan.priceUsd) > 0.01
         ) {
           return errorResponse("Payment amount does not match the selected plan", 400, req);
         }
 
-        // Record transaction
-        try {
-          await supabase.from("transactions").insert([
-            {
-              client_name: name || email,
-              client_email: email,
-              payment_id: settlement.paymentId || lookupKey,
-              provider: proof.provider,
-              product_name: `ReportCard Studio - ${plan.name}`,
-              amount: settlement.amount,
-              currency: proof.provider === "paypal" ? "USD" : "INR",
-              status: "paid",
-            },
-          ]);
-        } catch (e: any) {
-          console.error("Failed to record subscription transaction", e?.message);
+        // Record transaction. A duplicate id here is a concurrent retry of the
+        // SAME order; anything else is logged loudly but does not revoke a plan
+        // the buyer has already paid for.
+        const { error: ledgerError } = await supabase.from("transactions").insert([
+          {
+            client_name: name || email,
+            client_email: email,
+            payment_id: settlement.paymentId || lookupKey,
+            provider: proof.provider,
+            product_name: `ReportCard Studio - ${plan.name}`,
+            amount: settlement.amount,
+            currency:
+              proof.provider === "paypal" || proof.provider === "stripe" ? "USD" : "INR",
+            status: "paid",
+          },
+        ]);
+        if (ledgerError && ledgerError.code !== "23505") {
+          console.error("Failed to record subscription transaction:", ledgerError.message);
         }
       }
 
@@ -365,7 +423,11 @@ serve(async (req: Request) => {
             expiresAt: expiresAt.toDateString(),
           });
 
-          const sent = await sendEmail({ to: email, subject: rendered.subject, html: rendered.html });
+          const { outcome, attempts } = await sendEmailWithRetry({
+            to: email,
+            subject: rendered.subject,
+            html: rendered.html,
+          });
           await supabase
             .from("email_log")
             .insert([
@@ -373,7 +435,12 @@ serve(async (req: Request) => {
                 template: "subscription",
                 to_email: email,
                 subject: rendered.subject,
-                status: sent ? "sent" : "failed",
+                status: outcome.ok ? "sent" : "failed",
+                error: outcome.ok
+                  ? null
+                  : `${(outcome.error ?? "Resend rejected the email").slice(0, 260)}${
+                      attempts > 1 ? ` (after ${attempts} attempts)` : ""
+                    }`,
                 ip: ip || null,
               },
             ])

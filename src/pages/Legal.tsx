@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck, ScrollText } from 'lucide-react';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
+import { IsZmaWatermarkBg } from '../components/brand/IsZmaWatermarkBg';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle } from '../services/seo';
 
 type LegalKind = 'terms' | 'privacy';
 
@@ -17,13 +20,13 @@ const TERMS: Section[] = [
   {
     heading: '1. Acceptance of these terms',
     body: [
-      'By accessing or using Ishmaverse (the "Service"), including the Digital Greetings store and ReportCard Studio, you agree to be bound by these Terms & Conditions. If you do not agree, please do not use the Service.',
+      'By accessing or using isZma (the "Service", formerly Ishmaverse), including the Digital Greetings store and ReportCard Studio, you agree to be bound by these Terms & Conditions. If you do not agree, please do not use the Service.',
     ],
   },
   {
-    heading: '2. What Ishmaverse provides',
+    heading: '2. What isZma provides',
     body: [
-      'Ishmaverse is a digital ecosystem offering animated greeting cards, downloadable digital products and ReportCard Studio report-card generation. Greeting cards are shared as temporary links that stay live for 48 hours, after which they expire automatically and are removed from our systems.',
+      'isZma is a digital mall offering animated greeting cards, downloadable digital products and ReportCard Studio report-card generation. Greeting cards are shared as temporary links that stay live for 48 hours, after which they expire automatically and are removed from our systems.',
     ],
   },
   {
@@ -60,7 +63,7 @@ const TERMS: Section[] = [
   {
     heading: '8. Limitation of liability',
     body: [
-      'The Service is provided "as is". To the maximum extent permitted by law, Ishmaverse is not liable for any indirect or consequential loss arising from your use of the Service. Nothing in these terms limits rights that cannot be excluded by law.',
+      'The Service is provided "as is". To the maximum extent permitted by law, isZma is not liable for any indirect or consequential loss arising from your use of the Service. Nothing in these terms limits rights that cannot be excluded by law.',
     ],
   },
   {
@@ -109,8 +112,18 @@ export const Legal: React.FC<{ kind: LegalKind }> = ({ kind }) => {
   const sections = kind === 'terms' ? TERMS : PRIVACY;
   const title = kind === 'terms' ? 'Terms & Conditions' : 'Privacy Policy';
 
+  usePageMeta({
+    title: pageTitle(title),
+    description:
+      kind === 'terms'
+        ? 'The terms that apply to isZma, The Digital Mall, including digital greeting cards and ReportCard Studio.'
+        : 'How isZma handles your data for greeting cards, ReportCard Studio, payments and support.',
+    path: kind === 'terms' ? '/terms' : '/privacy',
+  });
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+    <div className="relative isolate min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+      <IsZmaWatermarkBg />
       <Navbar searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
 
       <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 sm:pt-16 pb-12">

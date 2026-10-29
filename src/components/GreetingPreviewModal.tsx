@@ -81,7 +81,7 @@ export const GreetingPreviewModal: React.FC<GreetingPreviewModalProps> = ({
   ctaLabel,
   onPublish,
   isAdmin = false,
-  watermarkName = 'Ishmaverse',
+  watermarkName = 'isZma',
 }) => {
   const font = getFontById(fontId);
   const audioRef = useRef<HTMLAudioElement | null>(null);

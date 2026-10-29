@@ -2,12 +2,12 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { supabase, isSupabaseConfigured, supportsRealtime } from '../services/supabase';
 import { SiteSettings } from '../types';
 
-const DEFAULT_LOGO = '/ishmaverse.png';
+const DEFAULT_LOGO = '/logos/iszma-primary-logo.png';
 
 const defaultBrand: SiteSettings = {
   id: 'default',
-  site_name: 'Ishmaverse',
-  brand_tagline: 'Ishmaverse Ecosystem',
+  site_name: 'isZma',
+  brand_tagline: 'Create moments that matter.',
   logo_url: DEFAULT_LOGO,
   primary_color: '#8b5cf6',
   secondary_color: '#1a0b2e',
@@ -24,6 +24,36 @@ interface BrandContextType {
   loading: boolean;
   refreshBrand: () => Promise<void>;
 }
+
+/**
+ * Display migration for rows written before the rebrand.
+ *
+ * `site_settings` is production data and is deliberately not rewritten here.
+ * When the stored values are still the old brand, the UI shows the current brand
+ * instead; an admin who has set a genuinely different custom name keeps it.
+ */
+const LEGACY_SITE_NAME = /^ishmaverse(\s+(digital\s+)?ecosystem)?$/i;
+const LEGACY_TAGLINE = /^ishmaverse(\s+(digital\s+)?ecosystem)?$/i;
+/* The previous default tagline; the current tagline replaces it on display. */
+const PREVIOUS_DEFAULT_TAGLINE = /^the\s+digital\s+mall$/i;
+const LEGACY_LOGO = /(^|\/)ishmaverse\.png($|\?)/i;
+
+const withCurrentBrand = (data: SiteSettings): SiteSettings => {
+  const siteName = (data.site_name ?? '').trim();
+  const tagline = (data.brand_tagline ?? '').trim();
+  const logo = (data.logo_url ?? '').trim();
+
+  return {
+    ...defaultBrand,
+    ...data,
+    site_name: !siteName || LEGACY_SITE_NAME.test(siteName) ? defaultBrand.site_name : siteName,
+    brand_tagline:
+      !tagline || LEGACY_TAGLINE.test(tagline) || PREVIOUS_DEFAULT_TAGLINE.test(tagline)
+        ? defaultBrand.brand_tagline
+        : tagline,
+    logo_url: !logo || LEGACY_LOGO.test(logo) ? DEFAULT_LOGO : logo,
+  };
+};
 
 const BrandContext = createContext<BrandContextType | undefined>(undefined);
 
@@ -48,25 +78,13 @@ export const BrandProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         .single();
 
       if (!error && data) {
-        const safeBrand: SiteSettings = {
-          ...defaultBrand,
-          ...data,
-          logo_url:
-            typeof data.logo_url === 'string' && data.logo_url.trim()
-              ? data.logo_url.trim()
-              : DEFAULT_LOGO,
-        };
-
-        setBrand(safeBrand);
-        document.title = safeBrand.site_name || 'Ishmaverse';
+        setBrand(withCurrentBrand(data as SiteSettings));
       } else {
         setBrand(defaultBrand);
-        document.title = defaultBrand.site_name;
       }
     } catch {
       // Keep the application usable with local/default branding.
       setBrand(defaultBrand);
-      document.title = defaultBrand.site_name;
     } finally {
       setLoading(false);
     }

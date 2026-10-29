@@ -25,12 +25,23 @@ import {
   type JoyLang,
   type JoyText,
 } from '../services/joyAssistant';
+import {
+  SUPPORT_SHORTCUT,
+  isHumanSupportRequest,
+  supportLabel,
+  supportPrefill,
+  supportReply,
+  whatsappSupportUrl,
+} from '../services/supportContact';
 
 type ChatState = 'idle' | 'collecting_details' | 'collecting_budget';
 
 interface JoyAction {
   label: string;
-  to: string;
+  /** Internal route, opened through the router. */
+  to?: string;
+  /** External link (e.g. the admin WhatsApp handoff), opened in a new tab. */
+  href?: string;
 }
 
 interface JoyMessage {
@@ -46,13 +57,13 @@ interface JoyMessage {
 /* ------------------------------------------------------------------ */
 
 const WELCOME: JoyText = {
-  en: "Hi, I'm Joy — your assistant at Ishmaverse. I can take you to any section, and once you're inside one I'll walk you through every step. Ask me anything!",
-  hi: 'Namaste! Main Joy hoon — Ishmaverse ki assistant. Kisi bhi section me le ja sakti hoon, aur section ke andar pahunchne par har step samjhaati hoon. Kuch bhi poochho!',
+  en: "Hi, I'm Joy — your assistant at isZma, The Digital Mall. I can take you to any section, and once you're inside one I'll walk you through every step. Ask me anything!",
+  hi: 'Namaste! Main Joy hoon — isZma ki assistant. Kisi bhi section me le ja sakti hoon, aur section ke andar pahunchne par har step samjhaati hoon. Kuch bhi poochho!',
 };
 
 const BUBBLE: JoyText = {
-  en: 'Hi, I’m Joy 👋 Stuck on a screen? I’ll walk you through it, step by step.',
-  hi: 'Namaste, main Joy hoon 👋 Kisi screen par confuse ho? Main step by step samjha deti hoon.',
+  en: 'Stuck on a screen? I’ll walk you through it, step by step.',
+  hi: 'Kisi screen par confuse ho? Main step by step samjha deti hoon.',
 };
 
 const DETAILS_PROMPT: JoyText = {
@@ -302,6 +313,21 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
         return;
       }
 
+      /*
+       * 1.6) A human is needed — hand the visitor to the admin on WhatsApp with
+       * their own message pre-filled. This is a transport, not a permission:
+       * Public Joy still never performs an admin action here.
+       */
+      if (isHumanSupportRequest(userMessage)) {
+        pushBot(supportReply(messageLang, { raw: userMessage }), {
+          label: supportLabel(messageLang),
+          href: whatsappSupportUrl(
+            supportPrefill(userMessage, messageLang, { section: sectionName || undefined }),
+          ),
+        });
+        return;
+      }
+
       // 2) Founder / owner questions.
       if (isFounderQuery(userMessage)) {
         pushBot(pick(FOUNDER_INTRO, messageLang), {
@@ -379,7 +405,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
       }
     >
       <JoyPanel
-        title="IshMaVerse"
+        title="isZma"
         onClose={() => setIsOpen(false)}
         onMinimise={() => setIsOpen(false)}
         bodyRef={scrollRef}
@@ -417,6 +443,28 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
               ).map((question) => (
                 <JoyChip key={question} label={question} onClick={() => void send(question)} />
               ))}
+              {/*
+               * Always available, without having to ask: the admin is one tap
+               * away on WhatsApp. The message is pre-filled with the visitor's
+               * language and section so nobody has to hunt for support.
+               */}
+              <a
+                href={whatsappSupportUrl(
+                  supportPrefill(
+                    pick(
+                      { en: 'I need help with isZma.', hi: 'Mujhe isZma par help chahiye.' },
+                      lang,
+                    ),
+                    lang,
+                    { section: sectionName || undefined },
+                  ),
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full border border-emerald-400/40 px-2.5 py-1 text-[11px] text-emerald-300 hover:border-emerald-400 hover:text-white transition-all"
+              >
+                {pick(SUPPORT_SHORTCUT, lang)}
+              </a>
             </div>
 
             <JoyComposer
@@ -430,15 +478,26 @@ export const Chatbot: React.FC<ChatbotProps> = ({ sectionId }) => {
       >
         {messages.map((msg) => (
           <JoyBubble key={msg.id} from={msg.from} text={msg.text}>
-            {msg.action && (
-              <button
-                onClick={() => goTo(msg.action!.to)}
-                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-neon-purple/60 bg-bg-dark-end/70 px-3 py-1.5 text-xs font-semibold text-neon-purple hover:bg-neon-purple hover:text-white transition-all"
-              >
-                <Compass className="w-3.5 h-3.5" />
-                {msg.action.label}
-              </button>
-            )}
+            {msg.action &&
+              (msg.action.href ? (
+                <a
+                  href={msg.action.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/60 bg-bg-dark-end/70 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500 hover:text-white transition-all"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  {msg.action.label}
+                </a>
+              ) : (
+                <button
+                  onClick={() => goTo(msg.action!.to!)}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-neon-purple/60 bg-bg-dark-end/70 px-3 py-1.5 text-xs font-semibold text-neon-purple hover:bg-neon-purple hover:text-white transition-all"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  {msg.action.label}
+                </button>
+              ))}
           </JoyBubble>
         ))}
 

@@ -8,7 +8,7 @@ export default {
     extend: {
       colors: {
         'neon-purple': '#8b5cf6',
-        'bg-dark-start': '#0b0514',
+        'bg-dark-start': '#0A0612',
         'bg-dark-end': '#1a0b2e',
       },
       boxShadow: {

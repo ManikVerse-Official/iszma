@@ -55,7 +55,34 @@ function runTests() {
   check('entitlement requires payment for paid plans', entitlementFn.includes('Payment is required to activate this plan'));
   check('entitlement verifies Razorpay payments', entitlementFn.includes('verifyRazorpayPayment'));
   check('entitlement verifies PayPal payments', entitlementFn.includes('verifyPayPalPayment'));
+  check('entitlement verifies Stripe payments', entitlementFn.includes('verifyStripePayment'));
   check('entitlement blocks replayed payments', entitlementFn.includes('This payment has already been used'));
+
+  /*
+   * A repeated checkout callback is NOT a second order. When the payment is in
+   * the ledger and the plan it bought is still active, the server answers 200
+   * (idempotent success) instead of 409, so a network retry never tells a paying
+   * customer their purchase failed. The early return also happens before the
+   * email block, so the retry cannot send a second confirmation.
+   */
+  const replayBlock = sliceBetween(entitlementFn, 'const { data: existingTx }', 'let settlement: any;');
+  check(
+    'a replayed payment answers success when the plan is still active',
+    replayBlock.includes('alreadyActive: true') && replayBlock.includes('duplicate: true'),
+  );
+  check(
+    'the replay path returns before any activation or email',
+    !replayBlock.includes('studio_subscriptions\n          .upsert') &&
+      !replayBlock.toLowerCase().includes('sendemail'),
+  );
+  check(
+    'Stripe proof does not require an order_id (a session id is the order)',
+    /proof\.provider === "stripe" \|\|/.test(entitlementFn),
+  );
+  check(
+    'the subscription ledger keeps Stripe amounts in USD',
+    /proof\.provider === "paypal" \|\| proof\.provider === "stripe" \? "USD"/.test(entitlementFn),
+  );
   check('entitlement checks payment amount matches plan', entitlementFn.includes('Payment amount does not match the selected plan'));
   check('entitlement uses server-side plan prices', entitlementFn.includes('loadStudioPlans'));
   check('create-payment-order supports plan_id for subscriptions', orderFn.includes('plan_id'));

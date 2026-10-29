@@ -287,7 +287,7 @@ export const AdminGameZone: React.FC = () => {
             <p className="flex items-start gap-2 text-sm text-amber-200">
               <Info className="w-4 h-4 mt-0.5 shrink-0" />
               Ad provider not configured — no revenue, impressions or RPM is shown, because
-              Ishmaverse has no advertising integration yet and inventing numbers would be wrong.
+              isZma has no advertising integration yet and inventing numbers would be wrong.
             </p>
             <p className="text-xs text-gray-500">
               Integration point (already in place): <code>src/components/game/AdSlot.tsx</code> is mounted

@@ -23,6 +23,9 @@ import { GameZone } from './GameZone';
 import { GreetingTheme } from '../types';
 import { useGreeting } from '../context/GreetingContext';
 import { useCatalog } from '../context/CatalogContext';
+import { IsZmaWatermarkBg } from '../components/brand/IsZmaWatermarkBg';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle, SITE_NAME, SITE_TAGLINE } from '../services/seo';
 
 export const SectionPage: React.FC = () => {
   const { sectionId = '' } = useParams<{ sectionId: string }>();
@@ -39,6 +42,53 @@ export const SectionPage: React.FC = () => {
   const isGreetings = sectionId === 'greetings';
   const isReportCard = sectionId === 'reportcard-studio';
   const isGameZone = sectionId === 'game-zone';
+
+  /*
+   * Route metadata, computed before any early return so the hook order never
+   * changes. Game Zone also applies its own title when it renders.
+   */
+  const meta = useMemo(() => {
+    if (isReportCard) {
+      return {
+        title: pageTitle('ReportCard Studio — School Report Card Maker'),
+        description:
+          'Turn an Excel mark sheet into print-ready school report cards in minutes with ReportCard Studio, built into isZma, The Digital Mall.',
+        path: '/section/reportcard-studio',
+      };
+    }
+    if (isGameZone) {
+      return {
+        title: pageTitle('Game Zone — Pair-3Balls'),
+        description:
+          'Play Pair-3Balls in the isZma Game Zone: against the computer offline, with a friend on one device, in a private room, or in a world match.',
+        /* Game Zone has its own canonical route, so do not split ranking signals. */
+        path: '/game-zone',
+      };
+    }
+    if (isGreetings) {
+      return {
+        title: pageTitle('Digital Greeting Cards'),
+        description:
+          'Create and share animated digital greeting cards for birthdays, anniversaries, weddings and festivals, or send the free Welcome Card on isZma.',
+        path: '/section/greetings',
+      };
+    }
+    if (!section) {
+      return {
+        title: `Section not found | ${SITE_NAME} — ${SITE_TAGLINE}`,
+        description: 'This isZma section could not be found. Return to the mall to explore Tech, Art, Comics and Education.',
+        path: `/section/${sectionId}`,
+        noindex: true,
+      };
+    }
+    return {
+      title: pageTitle(section.name),
+      description: `${section.tagline} — explore ${section.name} on ${SITE_NAME}, ${SITE_TAGLINE}.`,
+      path: `/section/${section.id}`,
+    };
+  }, [isGreetings, isGameZone, isReportCard, section, sectionId]);
+
+  usePageMeta(meta);
 
   /*
    * Every hook above MUST run on every render, in the same order. The early
@@ -85,7 +135,8 @@ export const SectionPage: React.FC = () => {
 
   if (!isGreetings || !section.available) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+      <div className="relative isolate min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+        <IsZmaWatermarkBg />
         <Navbar searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
         <div className="max-w-2xl mx-auto px-6 py-20 text-center">
           <div className="text-6xl mb-6">{section.emoji}</div>
@@ -111,7 +162,8 @@ export const SectionPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+    <div className="relative isolate min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+      <IsZmaWatermarkBg />
       <Navbar searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 sm:pt-16 pb-12">

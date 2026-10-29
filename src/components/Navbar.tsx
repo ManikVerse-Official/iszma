@@ -1,7 +1,9 @@
+import { Link } from 'react-router-dom';
 import { useBrand } from '../context/BrandContext';
 import { useCurrency, type CurrencyPreference } from '../context/CurrencyContext';
 import { Globe, Search } from 'lucide-react';
 import { SmartImage } from './SmartImage';
+import { IsZmaWordmark } from './brand/IsZmaWordmark';
 
 interface NavbarProps {
   searchTerm: string;
@@ -69,16 +71,29 @@ export const Navbar: React.FC<NavbarProps> = ({ searchTerm, setSearchTerm }) => 
             Tablets/desktop: a single row with the brand left and controls right. */}
         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="flex items-center justify-between gap-2 sm:justify-start">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Link
+              to="/"
+              aria-label={`${brand.site_name} — ${brand.brand_tagline}, go to the mall home`}
+              className="flex min-w-0 items-center gap-2.5 rounded-xl sm:gap-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-neon-purple focus-visible:ring-offset-2 focus-visible:ring-offset-bg-dark-start"
+            >
               <SmartImage
                 src={brand.logo_url}
-                alt={brand.site_name}
-                className="h-9 w-9 sm:h-12 sm:w-12 object-contain bg-transparent border-0 shadow-none"
+                alt=""
+                className="h-10 w-10 sm:h-12 sm:w-12 shrink-0 object-contain bg-transparent border-0 shadow-none drop-shadow-[0_0_18px_rgba(139,92,246,0.3)]"
               />
-              <span className="text-base sm:text-xl font-bold tracking-wider text-white truncate">
-                {brand.site_name.toUpperCase()}
+              <span className="min-w-0">
+                {brand.site_name.trim().toLowerCase() === 'iszma' ? (
+                  <IsZmaWordmark className="text-xl sm:text-2xl" />
+                ) : (
+                  <span className="block truncate text-base font-bold tracking-wider text-white sm:text-xl">
+                    {brand.site_name}
+                  </span>
+                )}
+                <span className="mt-1 hidden text-[10px] uppercase leading-none tracking-[0.2em] text-[#A78BFA]/85 sm:block">
+                  {brand.brand_tagline}
+                </span>
               </span>
-            </div>
+            </Link>
 
             {/* Compact currency switcher for phones only. */}
             <div className="sm:hidden shrink-0">

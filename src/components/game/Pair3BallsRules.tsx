@@ -1,5 +1,5 @@
 import { BookOpen } from 'lucide-react';
-import { TURN_SECONDS } from '../../game/pair3balls/engine';
+import { MOVE_REPEAT_LIMIT, TURN_SECONDS } from '../../game/pair3balls/engine';
 
 /**
  * Pair-3Balls rules, in English.
@@ -19,6 +19,7 @@ export const Pair3BallsRules: React.FC = () => {
     'Each player places three pieces, one per turn, on any empty point. White starts.',
     'Once all six pieces are placed, players take turns stepping one of their own pieces to an empty point connected to it by a line.',
     'Line up three of your own pieces on one of the drawn lines to win.',
+    `Repetition draw: the same move (same piece, same point, same side) may be played ${MOVE_REPEAT_LIMIT} times. Playing it once more ends the game as a draw — against the computer or another player.`,
     `Each turn has a ${TURN_SECONDS}-second timer. If it runs out, that player loses.`,
     'Pieces are never captured and never removed.',
   ];

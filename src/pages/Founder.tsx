@@ -5,6 +5,9 @@ import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { Chatbot } from '../components/Chatbot';
 import { useBrand } from '../context/BrandContext';
+import { IsZmaWatermarkBg } from '../components/brand/IsZmaWatermarkBg';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle } from '../services/seo';
 
 /** Founder's external portfolio (opened on explicit tap only). */
 const PORTFOLIO_URL = 'https://manik-dey-portfolio.vercel.app/';
@@ -13,7 +16,7 @@ const FOCUS = [
   {
     icon: Code2,
     title: 'Builds the product',
-    body: 'Designs and ships the tools behind Ishmaverse — from the animated greeting-card engine to ReportCard Studio.',
+    body: 'Designs and ships the tools behind isZma — from the animated greeting-card engine to ReportCard Studio.',
   },
   {
     icon: Palette,
@@ -23,7 +26,7 @@ const FOCUS = [
   {
     icon: Rocket,
     title: 'Keeps it growing',
-    body: 'New sections are added over time, with the goal of making Ishmaverse a single home for digital products in India.',
+    body: 'New sections are added over time, with the goal of making isZma a single home for digital products in India.',
   },
 ];
 
@@ -31,8 +34,16 @@ export const Founder: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const { brand } = useBrand();
 
+  usePageMeta({
+    title: pageTitle('Meet the Founder'),
+    description:
+      'Meet Manik, the founder of isZma, The Digital Mall — the person behind the greeting-card engine and ReportCard Studio.',
+    path: '/founder',
+  });
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+    <div className="relative isolate min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+      <IsZmaWatermarkBg />
       <Navbar searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
 
       <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 sm:pt-16 pb-12">

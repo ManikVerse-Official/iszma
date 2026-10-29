@@ -34,6 +34,7 @@ const ManageCard = lazy(() =>
 const Legal = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Legal })));
 const Founder = lazy(() => import('./pages/Founder').then((m) => ({ default: m.Founder })));
 const GameZone = lazy(() => import('./pages/GameZone').then((m) => ({ default: m.GameZone })));
+const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
 
 const RouteFallback = () => (
   <div className="min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end flex items-center justify-center">
@@ -73,6 +74,8 @@ function App() {
         <Route path="/game-zone/room/:code" element={<GameZone />} />
         <Route path="/terms" element={<Legal kind="terms" />} />
         <Route path="/privacy" element={<Legal kind="privacy" />} />
+        {/* Unknown paths get a branded, noindex page (the host still answers 200). */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
   );

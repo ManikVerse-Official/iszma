@@ -189,7 +189,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         amount: order.amount,
         currency: order.currency,
         order_id: order.order_id,
-        name: 'Ishmaverse',
+        name: 'isZma',
         description: product!.name,
         handler: async (response: any) => {
           await handlePaymentSuccess({

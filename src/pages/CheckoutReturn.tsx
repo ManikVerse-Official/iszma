@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Check, Copy, ExternalLink, Loader2, AlertTriangle, Clock } from 'lucide-react';
 import { buildGreetingUrl, buildManageUrl, createGreetingCard } from '../services/greetingService';
 import { clearPendingGreeting, readPendingGreeting } from '../services/pendingCheckout';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle } from '../services/seo';
 
 type Status = 'verifying' | 'success' | 'error';
 
@@ -25,6 +27,8 @@ export const CheckoutReturn: React.FC = () => {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const started = useRef(false);
+
+  usePageMeta({ title: pageTitle('Confirming your payment'), description: 'Confirming your isZma payment.', path: '/checkout/return', noindex: true });
 
   useEffect(() => {
     if (started.current) return;

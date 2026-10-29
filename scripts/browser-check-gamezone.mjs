@@ -170,7 +170,17 @@ try {
     'the 60-second timer is stated on the page',
     /60-second/i.test(await page.locator('main').innerText()),
   );
-  check('the mode list is exactly the three product modes', (await page.locator('button:has-text("Play vs Computer")').count()) === 1);
+  check(
+    'all four product modes are offered',
+    (await page.locator('button:has-text("Play vs Computer")').count()) === 1 &&
+      (await page.locator('button:has-text("Two Players")').count()) === 1 &&
+      (await page.locator('button:has-text("Private Room")').count()) === 1 &&
+      (await page.locator('button:has-text("World Match")').count()) === 1,
+  );
+  check(
+    'the repetition draw is stated in the rules',
+    /repetition draw/i.test(await page.locator('main').innerText()),
+  );
   check(
     'there is a way back to the library',
     (await page.locator('button:has-text("Game Library")').count()) === 1,
@@ -282,6 +292,92 @@ try {
         : 'note Private Room is enabled; its buttons are NOT clicked, because creating a room would write to the live project',
     );
   }
+
+  /* ---------------------------------------------------------------- */
+  /* 5b. Two players on one device, and the repetition draw            */
+  /* ---------------------------------------------------------------- */
+  /*
+   * The local mode hands both sides to this device, so a whole game can be
+   * driven deterministically — which is also the cleanest way to prove the
+   * repetition draw end-to-end in the real UI. No AI, no network.
+   */
+  await page.locator('button:has-text("Two Players")').first().click();
+  await page.waitForTimeout(400);
+  check(
+    'the local mode is two players on one device',
+    /two players, one device/i.test(await page.locator('main').innerText()),
+  );
+  check(
+    'no computer opponent is present in the local mode',
+    !/vs Computer/i.test(await page.locator('main').innerText()),
+  );
+
+  const point = (name) => page.locator(`button[aria-label^="${name}"]`).first();
+  const place = async (name) => {
+    await point(name).click();
+    await page.waitForTimeout(120);
+  };
+
+  /* White takes 0/2/8, Black takes 1/5/6 — no line completes in either set. */
+  await place('top-left corner');
+  await place('top-right corner');
+  await place('bottom-left corner');
+  await place('right middle');
+  await place('centre');
+  await place('bottom middle');
+  await page.waitForTimeout(200);
+
+  const localStatus = await status.innerText();
+  check(
+    'all six pieces are placed and the movement phase starts',
+    /tap one of your pieces/i.test(localStatus),
+    localStatus,
+  );
+  check(
+    'the local mode names the two players, not "you / computer"',
+    /player 1 \(white\)/i.test(localStatus),
+    localStatus,
+  );
+
+  const step = async (from, to) => {
+    await point(from).click();
+    await page.waitForTimeout(110);
+    await point(to).click();
+    await page.waitForTimeout(110);
+  };
+
+  /* The same two pieces shuttle back and forth; the 13th ply is the 4th repeat. */
+  const cycle = [
+    ['top-left corner', 'left middle'],
+    ['top-right corner', 'top middle'],
+    ['left middle', 'top-left corner'],
+    ['top middle', 'top-right corner'],
+  ];
+  let plies = 0;
+  for (let i = 0; i < 13; i += 1) {
+    const [from, to] = cycle[i % cycle.length];
+    await step(from, to);
+    plies += 1;
+    if (/draw/i.test(await status.innerText())) break;
+  }
+
+  const drawStatus = await status.innerText();
+  check(`the repetition draw ends the game (${plies} plies: "${drawStatus}")`, /draw/i.test(drawStatus));
+  check('the draw states why it is a draw', /repeated/i.test(drawStatus));
+  check('nobody wins a repetition draw', !/wins/i.test(drawStatus));
+  check(
+    'the board accepts no more clicks after the draw',
+    (await page.locator('button[aria-label*="selectable"]').count()) === 0,
+  );
+  check(
+    'a draw result banner is shown',
+    /repeated more than three times/i.test(await page.locator('main').innerText()),
+  );
+  await page.locator('button:has-text("Play again")').first().click();
+  await page.waitForTimeout(300);
+  check('a fresh local game starts after the draw', !/draw/i.test(await status.innerText()));
+  await page.locator('button:has-text("Modes")').first().click();
+  await page.waitForTimeout(300);
 
   /* ---------------------------------------------------------------- */
   /* 6. No runtime errors, and the rest of the app still boots         */

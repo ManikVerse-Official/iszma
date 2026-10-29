@@ -46,42 +46,47 @@ export const SectionsGrid: React.FC<SectionsGridProps> = ({ searchTerm }) => {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {visibleSections.map((section) => (
-            <TiltCard key={section.id} glow={`${section.accent}99`} className="group h-full rounded-2xl">
-            <button
-              onClick={() => navigate(`/section/${section.id}`)}
-              className="relative text-left w-full h-full"
+            <TiltCard
+              key={section.id}
+              glow={section.available ? 'rgba(139,92,246,0.35)' : undefined}
+              className={`group h-full rounded-2xl ${
+                section.available ? 'mall-card mall-card--live' : 'mall-card mall-card--soon'
+              }`}
             >
-              <div
-                className={`absolute inset-0 bg-gradient-to-r ${section.gradient} rounded-2xl blur opacity-40 group-hover:opacity-80 transition duration-300`}
-              />
-              <div className="relative h-full flex flex-col bg-bg-dark-end border border-neon-purple/30 rounded-2xl p-6 group-hover:border-neon-purple/70 transition-all duration-300">
-                <div className="flex items-start justify-between mb-4">
-                  <span className="text-4xl">{section.emoji}</span>
-                  {!section.available && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-gray-300 bg-white/5 border border-white/10 rounded-full px-3 py-1">
-                      <Lock className="w-3 h-3" />
-                      Coming soon
-                    </span>
-                  )}
-                  {section.available && (
+              <button
+                onClick={() => navigate(`/section/${section.id}`)}
+                className="relative h-full w-full rounded-2xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-neon-purple focus-visible:ring-offset-2 focus-visible:ring-offset-bg-dark-start"
+              >
+                <div className="mall-card__surface relative flex h-full flex-col rounded-2xl border p-6">
+                  <div className="mb-4 flex items-start justify-between gap-3">
                     <span
-                      className="text-[11px] font-semibold uppercase tracking-wider rounded-full px-3 py-1"
-                      style={{ backgroundColor: `${section.accent}22`, color: section.accent }}
+                      className={`text-4xl ${section.available ? '' : 'mall-card__icon'}`}
+                      aria-hidden="true"
                     >
-                      Live now
+                      {section.emoji}
                     </span>
-                  )}
-                </div>
+                    {section.available ? (
+                      <span className="mall-card__badge inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider">
+                        <span className="h-1.5 w-1.5 rounded-full bg-white/90" aria-hidden="true" />
+                        Live now
+                      </span>
+                    ) : (
+                      <span className="mall-card__badge inline-flex items-center gap-1 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider">
+                        <Lock className="h-3 w-3" aria-hidden="true" />
+                        Coming soon
+                      </span>
+                    )}
+                  </div>
 
-                <h3 className="text-xl font-bold text-white mb-2">{section.name}</h3>
-                <p className="text-sm text-gray-400 flex-grow">{section.tagline}</p>
+                  <h3 className="mall-card__heading mb-2 text-xl font-bold">{section.name}</h3>
+                  <p className="mall-card__copy flex-grow text-sm">{section.tagline}</p>
 
-                <div className="mt-5 flex items-center gap-2 font-semibold" style={{ color: section.accent }}>
-                  <span>{section.available ? 'Enter section' : 'Preview'}</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  <div className="mall-card__action mt-5 flex items-center gap-2 font-semibold">
+                    <span>{section.available ? 'Enter section' : 'Preview'}</span>
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
             </TiltCard>
           ))}
         </div>

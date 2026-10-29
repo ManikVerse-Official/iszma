@@ -136,6 +136,11 @@ export const AdminJoyDockView: React.FC<AdminJoyDockViewProps> = ({
                 <a
                   key={`${link.href}-${link.label}`}
                   href={link.href}
+                  /* External handoffs (WhatsApp) open in a new tab; admin routes
+                   * keep the current tab so the dashboard stays loaded. */
+                  {...(/^https?:\/\//i.test(link.href)
+                    ? { target: '_blank', rel: 'noopener noreferrer' }
+                    : {})}
                   className="rounded-lg border border-neon-purple/40 px-2.5 py-1 text-[11px] text-neon-purple hover:bg-neon-purple/10"
                 >
                   {link.label}

@@ -24,9 +24,15 @@
  * returns a NEW state. Nothing reads the clock or randomness on its own, which
  * is what makes timeouts and replays deterministic and testable.
  *
+ * The one game-ending condition that is not a win is the repetition draw: the
+ * SAME move (same side, same piece, same destination) may be played three times;
+ * the fourth time it is repeated the game is drawn. That stops an unwinnable
+ * game from shuffling two pieces back and forth forever, in every mode — vs
+ * Computer, two players on one device, Private Room and World Match.
+ *
  * Deliberately NOT here, because the official ruleset does not contain them:
- * captures, removing opponent pieces, extra pieces, draw conditions and
- * alternative win conditions.
+ * captures, removing opponent pieces, extra pieces and alternative win
+ * conditions.
  */
 
 export type Player = 'white' | 'black';
@@ -35,7 +41,20 @@ export type Player = 'white' | 'black';
 export type Point = number;
 export type Cell = Player | null;
 export type Phase = 'placement' | 'movement' | 'finished';
+/** How a game ended with a winner. */
 export type WinReason = 'three-in-a-row' | 'timeout';
+/**
+ * How a game ended at all. `repetition` is the only one without a winner: the
+ * same move was repeated more times than the rules allow.
+ */
+export type GameEndReason = WinReason | 'repetition';
+
+/**
+ * How often the identical move (same side, same from -> to) may be played
+ * before the game is drawn. A move played this many times can be answered only
+ * by repeating it once more — which ends the game as a draw.
+ */
+export const MOVE_REPEAT_LIMIT = 3;
 
 /** Seconds a player has to complete each turn before they forfeit. */
 export const TURN_SECONDS = 60;
@@ -109,9 +128,9 @@ export interface GameState {
   board: Cell[];
   turn: Player;
   phase: Phase;
-  /** null while the game is still running. */
+  /** null while the game is still running, and on a repetition draw. */
   winner: Player | null;
-  reason: WinReason | null;
+  reason: GameEndReason | null;
   /** When the current turn began (epoch ms). */
   turnStartedAt: number;
   /** Hard deadline for the current turn (epoch ms). */
@@ -246,14 +265,19 @@ export const remainingMs = (state: GameState, now: number): number => {
 };
 
 export const isExpired = (state: GameState, now: number): boolean =>
-  !state.winner && now >= state.turnDeadlineAt;
+  state.phase !== 'finished' && !state.winner && now >= state.turnDeadlineAt;
 
 /* ------------------------------------------------------------------ */
 /* Mutation                                                            */
 /* ------------------------------------------------------------------ */
 
 /** Marks the game finished and freezes the clock. */
-const finish = (state: GameState, winner: Player | null, reason: WinReason, now: number): GameState => ({
+const finish = (
+  state: GameState,
+  winner: Player | null,
+  reason: GameEndReason,
+  now: number,
+): GameState => ({
   ...state,
   phase: 'finished',
   winner,
@@ -261,6 +285,29 @@ const finish = (state: GameState, winner: Player | null, reason: WinReason, now:
   endedAt: now,
   turnDeadlineAt: now,
 });
+
+/** True when a finished game has no winner (currently only by repetition). */
+export const isDraw = (state: GameState): boolean =>
+  state.phase === 'finished' && state.winner === null;
+
+/** Two moves are "the same move" when the same side does the same thing. */
+export const isSameMove = (
+  a: Pick<Move, 'kind' | 'player' | 'from' | 'to'>,
+  b: Pick<Move, 'kind' | 'player' | 'from' | 'to'>,
+): boolean =>
+  a.kind === b.kind &&
+  a.player === b.player &&
+  a.to === b.to &&
+  (a.from ?? null) === (b.from ?? null);
+
+/**
+ * How many times this exact move already appears in the history (the current
+ * move is not in `history` yet, so the count is of the PREVIOUS turns).
+ */
+export const repetitionsOf = (
+  history: readonly Move[],
+  move: Pick<Move, 'kind' | 'player' | 'from' | 'to'>,
+): number => history.reduce((total, entry) => (isSameMove(entry, move) ? total + 1 : total), 0);
 
 /** Advances the turn to the other player and restarts the 60s clock. */
 const passTurn = (state: GameState, now: number): GameState => ({
@@ -295,6 +342,16 @@ const commit = (state: GameState, board: Cell[], move: Move): GameState => {
   const winner = findWinner(board);
   if (winner) return finish(base, winner, 'three-in-a-row', move.at);
 
+  /*
+   * Repetition draw: this exact move has already been played MOVE_REPEAT_LIMIT
+   * times, so playing it once more ends the game without a winner. The move is
+   * still applied (the board shows what was actually played) and the clock is
+   * frozen, exactly like a win.
+   */
+  if (repetitionsOf(state.history, move) >= MOVE_REPEAT_LIMIT) {
+    return finish(base, null, 'repetition', move.at);
+  }
+
   const placed = moveCount(board);
   const nextPhase: Phase = placed >= PIECES_PER_PLAYER * 2 ? 'movement' : base.phase;
   return passTurn({ ...base, phase: nextPhase }, move.at);
@@ -309,7 +366,7 @@ const moveCount = (board: Cell[]): number =>
 
 export const applyPlace = (state: GameState, point: Point, now: number): MoveOutcome => {
   const settled = settleTimeout(state, now);
-  if (settled.winner) return { ok: false, code: 'finished', state: settled };
+  if (settled.phase === 'finished') return { ok: false, code: 'finished', state: settled };
   if (settled.phase !== 'placement') return { ok: false, code: 'wrong-phase', state: settled };
   if (!isPoint(point)) return { ok: false, code: 'bad-point', state: settled };
   if (settled.board[point] !== null) return { ok: false, code: 'occupied', state: settled };
@@ -331,7 +388,7 @@ export const applyMove = (
   now: number,
 ): MoveOutcome => {
   const settled = settleTimeout(state, now);
-  if (settled.winner) return { ok: false, code: 'finished', state: settled };
+  if (settled.phase === 'finished') return { ok: false, code: 'finished', state: settled };
   if (settled.phase !== 'movement') return { ok: false, code: 'wrong-phase', state: settled };
   if (!isPoint(from) || !isPoint(to)) return { ok: false, code: 'bad-point', state: settled };
   if (from === to) return { ok: false, code: 'same-point', state: settled };
@@ -366,7 +423,7 @@ export interface SerializedState {
   turn: Player;
   phase: Phase;
   winner: Player | null;
-  reason: WinReason | null;
+  reason: GameEndReason | null;
   turnStartedAt: number;
   turnDeadlineAt: number;
   startedAt: number;
@@ -408,7 +465,10 @@ export const deserialize = (raw: unknown, now: number): GameState => {
       ? data.phase
       : 'placement';
   const winner = data.winner === 'white' || data.winner === 'black' ? data.winner : null;
-  const reason = data.reason === 'three-in-a-row' || data.reason === 'timeout' ? data.reason : null;
+  const reason =
+    data.reason === 'three-in-a-row' || data.reason === 'timeout' || data.reason === 'repetition'
+      ? data.reason
+      : null;
 
   const numberOr = (value: unknown, fallback: number): number =>
     typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -440,5 +500,5 @@ export const RULES = {
   capture: 'Pieces are never captured or removed.',
   win: 'The first player to line up three of their own pieces on one of the drawn lines wins.',
   timer: `Each turn has a ${TURN_SECONDS}-second timer. Running out of time loses the game.`,
-  draw: 'There is no draw in the official ruleset: a game ends only by three-in-a-row or by a timeout.',
+  draw: `Repetition draw: the identical move (same piece, same destination, same side) may be played three times. Playing it one more time ends the game as a draw — against the computer and between two human players alike.`,
 } as const;

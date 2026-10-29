@@ -19,7 +19,15 @@ import {
 } from '../../services/adminJoy';
 import { getAuditLog } from '../../services/auditLog';
 import { createServerAdminOps, fetchServerAudit, type ServerAuditEntry } from '../../services/adminOps';
+import { detectJoyLanguage } from '../../services/joyAssistant';
 import { loadStudioPlanPrices } from '../../services/studioPlanPrices';
+import {
+  isHumanSupportRequest,
+  supportLabel,
+  supportPrefill,
+  supportReply,
+  whatsappSupportUrl,
+} from '../../services/supportContact';
 import { getSecuritySummary } from '../../services/threatDetection';
 import { ADMIN_JOY_WELCOME } from './adminJoyPrompts';
 
@@ -273,6 +281,24 @@ export const useAdminJoyConsole = () => {
     if (!confirmed) setPending(null);
 
     try {
+      /*
+       * A request for a human is not a command: nothing is planned, nothing is
+       * executed, nothing is audited as a change. Joy answers with the next
+       * steps she can offer and the authorised admin WhatsApp link, with the
+       * admin's own note already written into the message (editable before it is
+       * sent). Same number as Public Joy — there is only one support channel.
+       */
+      if (!confirmed && isHumanSupportRequest(trimmed)) {
+        const lang = detectJoyLanguage(trimmed);
+        pushBot(supportReply(lang, { staff: true, raw: trimmed }), [
+          {
+            href: whatsappSupportUrl(supportPrefill(trimmed, lang, { staff: true })),
+            label: supportLabel(lang),
+          },
+        ]);
+        return;
+      }
+
       const actorForPlan = actor ?? { userId: '', email: '', isAdmin: false };
       if (!actor || !actor.isAdmin) {
         const plan = planAdminCommand(trimmed, actorForPlan, snapshot);

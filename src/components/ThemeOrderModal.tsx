@@ -379,7 +379,7 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
       // session JWT (or the payment with the gateway) before writing the card
       // and its ledger row. The free welcome card instead goes through
       // `create-free-greeting`, which enforces the per-email/per-IP free limit.
-      const { card, transaction } = usesFreeCardFlow
+      const { card, transaction, receiptInfo } = usesFreeCardFlow
         ? await createFreeGreetingCard(cardInput)
         : await createGreetingCard({
             ...cardInput,
@@ -391,12 +391,21 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
       setManagementToken(card.management_token ?? '');
       setExpiresAt(card.expires_at ? new Date(card.expires_at) : null);
 
-      // Issue a printable receipt for paid cards.
+      /*
+       * The receipt was already minted and emailed by `create-greeting` after it
+       * verified the payment, so this only reads the printable HTML back. The
+       * lookup is idempotent and does NOT email again (that used to be a second
+       * copy on every retried callback).
+       */
       if (!isFreeTheme && transaction?.payment_id) {
+        setReceiptNumber(receiptInfo?.receipt.receipt_number ?? '');
+        setReceiptEmailed(Boolean(receiptInfo?.emailed));
         const result = await fetchReceipt(transaction.payment_id);
         setReceiptHtml(result?.html ?? '');
-        setReceiptNumber(result?.receipt.receipt_number ?? '');
-        setReceiptEmailed(Boolean(result?.emailed));
+        if (!receiptInfo?.receipt && result?.receipt) {
+          setReceiptNumber(result.receipt.receipt_number);
+          setReceiptEmailed(Boolean(result.emailed));
+        }
       }
 
       /*
@@ -411,16 +420,23 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
        *
        * If the buyer left no email, the bill is addressed to the store owner so
        * the record is never lost.
+       *
+       * When the server already emailed the receipt, no bill is sent from the
+       * browser: one order, one email. The bill below is only a fallback for a
+       * receipt that could not be delivered (or for the free card, which has no
+       * receipt), and it is deduplicated server-side on the payment id.
        */
-      void sendPurchaseEmail(buyerEmail, {
-        name: details.sender.trim(),
-        productName: `${theme.name} — Digital Greeting Card`,
-        amount: isFreeTheme ? '0' : String(displayPrice),
-        currency: isIndiaRegion ? 'INR' : 'USD',
-        paymentId: transaction?.payment_id ?? '',
-        orderDate: new Date().toDateString(),
-        cardUrl: buildGreetingUrl(card.id),
-      });
+      if (!receiptInfo?.emailed) {
+        void sendPurchaseEmail(buyerEmail, {
+          name: details.sender.trim(),
+          productName: `${theme.name} — Digital Greeting Card`,
+          amount: isFreeTheme ? '0' : String(displayPrice),
+          currency: isIndiaRegion ? 'INR' : 'USD',
+          paymentId: transaction?.payment_id ?? '',
+          orderDate: new Date().toDateString(),
+          cardUrl: buildGreetingUrl(card.id),
+        });
+      }
 
       setCreateError('');
       setCreateErrorRetryable(true);
@@ -482,7 +498,7 @@ export const ThemeOrderModal: React.FC<ThemeOrderModalProps> = ({ theme, isOpen,
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${receiptNumber || 'ishmaverse-receipt'}.html`;
+    link.download = `${receiptNumber || 'iszma-receipt'}.html`;
     document.body.appendChild(link);
     link.click();
     link.remove();

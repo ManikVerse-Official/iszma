@@ -304,7 +304,7 @@ export default function Login() {
               {planActive ? 'Change plan' : 'Subscribe for unlimited report cards'}
             </h3>
             <p className="text-sm text-ink-500 mt-1">
-              Each plan shows its own billing period (live server prices). Prices set by Ishmaverse.
+              Each plan shows its own billing period (live server prices). Prices set by isZma.
             </p>
           </div>
           <div className="card-body space-y-3">

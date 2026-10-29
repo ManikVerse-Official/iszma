@@ -157,10 +157,26 @@ export interface CreateGreetingInput {
   payment?: PaymentProof;
 }
 
+/**
+ * The server-issued receipt, returned by `create-greeting` alongside the card.
+ *
+ * The receipt is minted server-side only after the gateway-verified payment has
+ * been written to the ledger, so the browser never has to request one (and can
+ * never trigger a second copy by repeating a callback).
+ */
+export interface CreateGreetingReceipt {
+  receipt: Receipt;
+  /** True only when the provider accepted the buyer's email on this call. */
+  emailed: boolean;
+  emailStatus: 'sent' | 'existing' | 'skipped' | 'failed' | string;
+  error?: string;
+}
+
 export interface CreateGreetingResult {
   card: GreetingCard;
   transaction?: Transaction;
   receipt?: Receipt;
+  receiptInfo?: CreateGreetingReceipt;
 }
 
 /**
@@ -207,6 +223,12 @@ export const createGreetingCard = async (
     return {
       card: data.card as GreetingCard,
       transaction: data.transaction as Transaction | undefined,
+      ...(data.receipt
+        ? {
+            receiptInfo: data.receipt as CreateGreetingReceipt,
+            receipt: (data.receipt as CreateGreetingReceipt).receipt,
+          }
+        : {}),
     };
   }
 

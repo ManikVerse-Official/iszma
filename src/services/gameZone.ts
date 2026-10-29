@@ -241,14 +241,28 @@ export const saveGameSettings = (
  */
 export const roomToEngineState = (room: GameRoomView, now: number = Date.now()): GameState => {
   const state = deserialize(room.state, now);
-  if (typeof room.turn_deadline_ms === 'number') {
-    return {
-      ...state,
-      turnDeadlineAt: room.turn_deadline_ms,
-      winner: room.winner_side ?? state.winner,
-    };
-  }
-  return { ...state, winner: room.winner_side ?? state.winner };
+  /*
+   * The end reason lives in the room's `result` column, so it is mapped here —
+   * including the repetition draw, which has no `winner_side` at all. Without
+   * this an online draw would render as a game that never ended.
+   */
+  const reason =
+    room.result === 'repetition'
+      ? 'repetition'
+      : room.result === 'timeout'
+        ? 'timeout'
+        : room.winner_side
+          ? 'three-in-a-row'
+          : state.reason;
+  const merged: GameState = {
+    ...state,
+    winner: room.winner_side ?? state.winner,
+    reason,
+    phase: room.status === 'finished' ? 'finished' : state.phase,
+  };
+  return typeof room.turn_deadline_ms === 'number'
+    ? { ...merged, turnDeadlineAt: room.turn_deadline_ms }
+    : merged;
 };
 
 /** True when it is this player's turn in the given room. */

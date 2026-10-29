@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Trophy, Frown, LogOut, RotateCcw, Timer, AlertCircle, Clock } from 'lucide-react';
+import { Loader2, Trophy, Frown, LogOut, RotateCcw, Timer, AlertCircle, Clock, Users } from 'lucide-react';
 import {
   TURN_MS,
   legalMoves,
@@ -189,7 +189,8 @@ export const OnlineMatch: React.FC<OnlineMatchProps> = ({ roomId, onLeave }) => 
     );
   }
 
-  const remaining = state.winner ? 0 : remainingMs(state, now);
+  const drawn = state.reason === 'repetition' && !room.winner_side;
+  const remaining = state.winner || drawn ? 0 : remainingMs(state, now);
   const percent = Math.max(0, Math.min(100, (remaining / TURN_MS) * 100));
   const urgent = remaining > 0 && remaining <= 10_000;
   const youWon = Boolean(room.winner_side && room.winner_side === mySide);
@@ -307,6 +308,30 @@ export const OnlineMatch: React.FC<OnlineMatchProps> = ({ roomId, onLeave }) => 
               onClick={() => void doRematch()}
               disabled={busy}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-neon-purple text-white text-sm font-semibold hover:bg-purple-600 transition-colors disabled:opacity-60"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Rematch
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Repetition draw — no winner, so it needs its own result card. */}
+      {drawn && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-4">
+          <div className="flex items-center gap-2 text-amber-200">
+            <Users className="w-5 h-5" />
+            <span className="font-semibold">Draw</span>
+            <span className="text-sm text-amber-200/80">
+              (the same move was repeated more than three times)
+            </span>
+          </div>
+          {room.opponent_joined && (
+            <button
+              type="button"
+              onClick={() => void doRematch()}
+              disabled={busy}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-300 text-[#0b0514] text-sm font-semibold hover:bg-amber-200 transition-colors disabled:opacity-60"
             >
               <RotateCcw className="w-4 h-4" />
               Rematch

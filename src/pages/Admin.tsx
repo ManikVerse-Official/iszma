@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AdminLogin } from '../components/AdminLogin';
 import { useGreeting } from '../context/GreetingContext';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle } from '../services/seo';
 
 /**
  * `/admin` is the entry point: it shows the login screen and, once a verified
@@ -10,6 +12,8 @@ import { useGreeting } from '../context/GreetingContext';
 export const Admin: React.FC = () => {
   const { isAdmin, adminLoading } = useGreeting();
   const navigate = useNavigate();
+
+  usePageMeta({ title: pageTitle('Admin sign in'), description: 'isZma administrator sign in.', path: '/admin', noindex: true });
 
   useEffect(() => {
     if (!adminLoading && isAdmin) {

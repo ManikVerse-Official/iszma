@@ -1,6 +1,6 @@
-# Ishmaverse - Dynamic Digital E-commerce Platform
+# isZma — The Digital Mall
 
-A production-ready, modular e-commerce platform built with React, TypeScript, Vite, Tailwind CSS, Supabase, and Firebase.
+A production-ready, modular digital mall built with React, TypeScript, Vite, Tailwind CSS, Supabase, and Firebase. It hosts digital greeting cards, ReportCard Studio, digital products and the Game Zone.
 
 ## Features
 
@@ -77,8 +77,8 @@ Create a `site_settings` table in your Supabase project:
 ```sql
 CREATE TABLE site_settings (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  site_name TEXT DEFAULT 'Ishmaverse',
-  brand_tagline TEXT DEFAULT 'Ishmaverse Ecosystem',
+  site_name TEXT DEFAULT 'isZma',
+  brand_tagline TEXT DEFAULT 'The Digital Mall',
   logo_url TEXT,
   primary_color TEXT DEFAULT '#8b5cf6',
   secondary_color TEXT DEFAULT '#1a0b2e',
@@ -86,7 +86,7 @@ CREATE TABLE site_settings (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-INSERT INTO site_settings (site_name, brand_tagline) VALUES ('Ishmaverse', 'Ishmaverse Ecosystem');
+INSERT INTO site_settings (site_name, brand_tagline) VALUES ('isZma', 'The Digital Mall');
 ```
 
 Enable Realtime for the `site_settings` table to get live updates.

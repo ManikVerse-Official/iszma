@@ -1713,8 +1713,8 @@ const describeSections = (lang: JoyLang): string => {
   return [
     sectionText(
       lang,
-      'Ishmaverse is a digital mall with these sections:',
-      'Ishmaverse ek digital mall hai, in sections ke saath:',
+      'isZma is The Digital Mall, with these sections:',
+      'isZma ek digital mall hai, in sections ke saath:',
     ),
     ...lines,
   ].join('\n');
@@ -1829,8 +1829,8 @@ export const resolveStudioQuery = (
     return {
       reply: pick(
         {
-          en: 'Digital Greetings 💌 is a different section of Ishmaverse — the FREE Welcome Card sits right at the top, and you can make and send it at no cost. I’m opening the Digital Greetings section now; pick the free card and tap “Create card” to start. This will leave ReportCard Studio.',
-          hi: 'Digital Greetings 💌 Ishmaverse ka doosra section hai — sabse upar FREE Welcome Card hai, aur use bilkul free bana ke bhej sakte ho. Main abhi Digital Greetings section khol rahi hoon; free card chuno aur “Create card” dabao. Isse ReportCard Studio chhodna padega.',
+          en: 'Digital Greetings 💌 is a different section of isZma — the FREE Welcome Card sits right at the top, and you can make and send it at no cost. I’m opening the Digital Greetings section now; pick the free card and tap “Create card” to start. This will leave ReportCard Studio.',
+          hi: 'Digital Greetings 💌 isZma ka doosra section hai — sabse upar FREE Welcome Card hai, aur use bilkul free bana ke bhej sakte ho. Main abhi Digital Greetings section khol rahi hoon; free card chuno aur “Create card” dabao. Isse ReportCard Studio chhodna padega.',
         },
         lang,
       ),
@@ -1952,13 +1952,13 @@ export const resolveStudioQuery = (
 export const studioFallback = (routeKey: StudioScreen, lang: JoyLang): string =>
   pick(
     {
-      en: `I don’t have that one, and I won’t guess. I can help with ReportCard Studio — this screen, the 4-step workflow, free tries, pricing and billing — and with the rest of Ishmaverse: ${MALL_KNOWLEDGE.map(
+      en: `I don’t have that one, and I won’t guess. I can help with ReportCard Studio — this screen, the 4-step workflow, free tries, pricing and billing — and with the rest of isZma: ${MALL_KNOWLEDGE.map(
         (section) => section.name,
       ).join(', ')}. Name a section, or the problem you are stuck on. ${pick(
         SCREEN_GUIDES[routeKey].intro,
         'en',
       )}`,
-      hi: `Ye mujhe nahi pata, aur main guess nahi karungi. Main ReportCard Studio me madad kar sakti hoon — ye screen, 4-step workflow, free tries, pricing aur billing — aur poori Ishmaverse me: ${MALL_KNOWLEDGE.map(
+      hi: `Ye mujhe nahi pata, aur main guess nahi karungi. Main ReportCard Studio me madad kar sakti hoon — ye screen, 4-step workflow, free tries, pricing aur billing — aur poori isZma me: ${MALL_KNOWLEDGE.map(
         (section) => section.name,
       ).join(', ')}. Kisi section ka naam bolo, ya woh problem jisme aap atke ho. ${pick(
         SCREEN_GUIDES[routeKey].intro,

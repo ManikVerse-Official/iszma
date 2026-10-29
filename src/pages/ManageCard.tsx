@@ -15,6 +15,8 @@ import { deleteManagedCard, getManagedCard } from '../services/greetingService';
 import { resolveTheme } from '../data/greetingThemes';
 import { useBrand } from '../context/BrandContext';
 import { useCatalog } from '../context/CatalogContext';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle } from '../services/seo';
 
 type Status = 'loading' | 'ready' | 'missing' | 'deleting' | 'deleted' | 'error';
 
@@ -39,6 +41,8 @@ export const ManageCard: React.FC = () => {
   const { token = '' } = useParams<{ token: string }>();
   const { brand } = useBrand();
   const { themes } = useCatalog();
+
+  usePageMeta({ title: pageTitle('Manage your card'), description: 'Private card management.', path: `/manage/${token || 'private'}`, noindex: true });
   const [status, setStatus] = useState<Status>('loading');
   const [card, setCard] = useState<GreetingCard | null>(null);
   const [expired, setExpired] = useState(false);

@@ -162,8 +162,8 @@ export const JOY_SECTION_GUIDES: Record<string, JoySectionGuide> = {
       {
         title: { en: '1. Pick a mode', hi: '1. Mode chuno' },
         detail: {
-          en: 'Game Zone has exactly three modes. Play vs Computer lets you choose Easy, Medium or Hard. Private Room gives you a room code and an invite link to send a friend. World Match pairs you with a real player who is searching right now. All three use the same rules and the same board.',
-          hi: 'Game Zone me theek teen modes hain. Play vs Computer me aap Easy, Medium ya Hard chunte ho. Private Room me aapko room code aur invite link milta hai jo dost ko bhej sakte ho. World Match aapko us waqt search kar rahe asli player se match kar deta hai. Teeno me rules aur board same hain.',
+          en: 'Game Zone has four modes. Play vs Computer lets you choose Easy, Medium or Hard. Two Players — One Device is pass and play with a friend on this screen. Private Room gives you a room code and an invite link to send a friend, who can join from their own device and location. World Match pairs you with a real player who is searching right now. All four use the same rules and the same board.',
+          hi: 'Game Zone me chaar modes hain. Play vs Computer me aap Easy, Medium ya Hard chunte ho. Two Players — One Device me dost ke saath isi screen par pass-and-play hota hai. Private Room me room code aur invite link milta hai — dost apne device aur apni location se join kar sakta hai. World Match aapko us waqt search kar rahe asli player se match kar deta hai. Chaaron me rules aur board same hain.',
         },
       },
       {
@@ -190,8 +190,8 @@ export const JOY_SECTION_GUIDES: Record<string, JoySectionGuide> = {
       {
         title: { en: '5. Winning and the timer', hi: '5. Jeet aur timer' },
         detail: {
-          en: 'Line up three of your own pieces on any drawn line to win. Each turn has a 60-second timer, and the player whose timer runs out loses. There is no capture and no draw.',
-          hi: 'Apne teen pieces kisi bhi drawn line par ek saath laane wala jeet jaata hai. Har turn par 60 second ka timer hota hai, aur jiska timer khatam ho jaaye woh haar jaata hai. Na capture hai na draw.',
+          en: 'Line up three of your own pieces on any drawn line to win. Each turn has a 60-second timer, and the player whose timer runs out loses. Pieces are never captured. A game can also end as a draw: the same move (same piece, same point, same side) may be played three times, and playing it once more ends the game as a draw — against the computer or another player.',
+          hi: 'Apne teen pieces kisi bhi drawn line par ek saath laane wala jeet jaata hai. Har turn par 60 second ka timer hota hai, aur jiska timer khatam ho jaaye woh haar jaata hai. Pieces capture nahi hote. Game draw bhi ho sakta hai: wahi move (same piece, same point, same side) teen baar khela ja sakta hai, aur chauthi baar dohraane par game draw ho jaata hai — computer ke saath bhi aur doosre player ke saath bhi.',
         },
       },
     ],
@@ -233,8 +233,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'kaun pehle', 'pehla turn', 'pehle kaun khelta',
     ],
     reply: {
-      en: 'Pair-3Balls 🎮 — the board has NINE points: four corners, four side midpoints and one centre, joined by straight lines (eight lines of three: across, down and two diagonals through the centre). Each player has three pieces. First you PLACE them, one per turn, on empty points (White starts). When all six are placed you MOVE, taking turns to step one of your own pieces to an empty point joined to it by a line. Pieces are never captured. The first player to line up three of their own pieces on a drawn line wins, and each turn has a 60-second timer — run out and you lose. There is no draw.',
-      hi: 'Pair-3Balls 🎮 — board me NAU points hain: chaar corner, chaar side midpoint aur ek centre, sab seedhi lines se jude (kul aath lines: horizontal, vertical aur centre se jaati do diagonal). Har player ke paas teen pieces hote hain. Pehle aap inhe PLACE karte ho — ek-ek karke khaali point par (White pehle). Chhe pieces rakhne ke baad MOVE hota hai: apna piece utha kar usse line se jude khaali point par step karte ho. Pieces kabhi capture nahi hote. Jo pehle apne teen pieces kisi drawn line par ek saath laata hai woh jeet jaata hai, aur har turn par 60 second ka timer hota hai — khatam hone par aap haar jaate ho. Draw nahi hota.',
+      en: 'Pair-3Balls 🎮 — the board has NINE points: four corners, four side midpoints and one centre, joined by straight lines (eight lines of three: across, down and two diagonals through the centre). Each player has three pieces. First you PLACE them, one per turn, on empty points (White starts). When all six are placed you MOVE, taking turns to step one of your own pieces to an empty point joined to it by a line. Pieces are never captured. The first player to line up three of their own pieces on a drawn line wins, and each turn has a 60-second timer — run out and you lose. A game is drawn if the same move (same piece, same point, same side) is repeated more than three times.',
+      hi: 'Pair-3Balls 🎮 — board me NAU points hain: chaar corner, chaar side midpoint aur ek centre, sab seedhi lines se jude (kul aath lines: horizontal, vertical aur centre se jaati do diagonal). Har player ke paas teen pieces hote hain. Pehle aap inhe PLACE karte ho — ek-ek karke khaali point par (White pehle). Chhe pieces rakhne ke baad MOVE hota hai: apna piece utha kar usse line se jude khaali point par step karte ho. Pieces kabhi capture nahi hote. Jo pehle apne teen pieces kisi drawn line par ek saath laata hai woh jeet jaata hai, aur har turn par 60 second ka timer hota hai — khatam hone par aap haar jaate ho. Agar wahi move (same piece, same point, same side) teen baar se zyada dohraya jaaye to game draw ho jaata hai.',
     },
   },
   {
@@ -254,8 +254,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'jeet kaise hoti', 'jeetne ka rule', 'how do i get three', 'what makes you win',
     ],
     reply: {
-      en: '🏆 You win Pair-3Balls by lining up three of your own pieces on one of the eight drawn lines — the three horizontals, the three verticals, or the two diagonals through the centre. You can complete a line during the placement phase or the movement phase; the game stops the moment a line forms. There is no capture and no draw, so the only other way a game ends is the 60-second turn timer.',
-      hi: '🏆 Pair-3Balls aap aath drawn lines me se kisi ek par apne teen pieces ek saath laa kar jeette ho — teen horizontal, teen vertical, ya centre se jaati do diagonals. Line placement phase me bhi ban sakti hai aur movement phase me bhi; line bante hi game ruk jaata hai. Capture nahi hota aur draw bhi nahi, isliye game khatam hone ka doosra tareeqa 60-second turn timer hai.',
+      en: '🏆 You win Pair-3Balls by lining up three of your own pieces on one of the eight drawn lines — the three horizontals, the three verticals, or the two diagonals through the centre. You can complete a line during the placement phase or the movement phase; the game stops the moment a line forms. Pieces are never captured. The other endings are the 60-second turn timer (run out and you lose) and a repetition draw — the same move repeated more than three times.',
+      hi: '🏆 Pair-3Balls aap aath drawn lines me se kisi ek par apne teen pieces ek saath laa kar jeette ho — teen horizontal, teen vertical, ya centre se jaati do diagonals. Line placement phase me bhi ban sakti hai aur movement phase me bhi; line bante hi game ruk jaata hai. Capture nahi hota. Baaki endings hain 60-second turn timer (khatam hone par haar) aur repetition draw — wahi move teen baar se zyada dohrane par.',
     },
   },
   {
@@ -278,8 +278,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'kisi ke saath khel', 'dusre player',
     ],
     reply: {
-      en: '🎮 Game Zone has exactly three modes. Play vs Computer: choose Easy, Medium or Hard and play on this device. Private Room: create a room to get a 6-character code and an invite link — send either to a friend, and whoever joins plays you in that same room. World Match: you join a queue and get paired with a real player who is searching at that moment. All three use the same board, the same rules and the same 60-second turn timer.',
-      hi: '🎮 Game Zone me theek teen modes hain. Play vs Computer: Easy, Medium ya Hard chuno aur isi device par khelo. Private Room: room banao, 6-character code aur invite link milega — dono me se koi bhi dost ko bhej do, jo bhi join karega wahi aapke saath usi room me khelega. World Match: aap queue me jaate ho aur us waqt search kar rahe asli player se match ho jaate ho. Teeno me board, rules aur 60-second turn timer same hain.',
+      en: '🎮 Game Zone has four modes. Play vs Computer: choose Easy, Medium or Hard and play on this device. Two Players — One Device: pass the screen back and forth with a friend. Private Room: create a room to get a 6-character code and an invite link — send either to a friend anywhere, and whoever joins plays you from their own device in that same room. World Match: you join a queue and get paired with a real player who is searching at that moment. All four use the same board, the same rules and the same 60-second turn timer — and repeating the same move more than three times ends the game as a draw.',
+      hi: '🎮 Game Zone me chaar modes hain. Play vs Computer: Easy, Medium ya Hard chuno aur isi device par khelo. Two Players — One Device: dost ke saath screen pass karke khelo. Private Room: room banao, 6-character code aur invite link milega — dost ko kahin bhi bhej do, woh apne device se usi room me aapse khelega. World Match: aap queue me jaate ho aur us waqt search kar rahe asli player se match ho jaate ho. Chaaron me board, rules aur 60-second turn timer same hain — aur wahi move teen baar se zyada dohrane par game draw ho jaata hai.',
     },
   },
   {
@@ -471,8 +471,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'receipt kaha', 'invoice kaha', 'previous order',
     ],
     reply: {
-      en: 'Order history 📧 — there is no separate “my orders” page on the site. Every paid order gets a bill + receipt email that also carries the private manage link: open it to see the card, or delete it for good (deleting cannot be undone). Search your inbox for “Ishmaverse” (check Spam/Promotions too). If the email is lost, tell me the email address you used and the payment id (it starts with “pay_” or “FREE-”), and I’ll pass it to the team to look up.',
-      hi: 'Order history 📧 — site par alag “my orders” page nahi hai. Har paid order ki bill + receipt email aati hai, jisme private manage link bhi hota hai: usse card dekh sakte ho, ya permanently delete kar sakte ho (delete undo nahi hota). Apne inbox me “Ishmaverse” search karo (Spam/Promotions bhi dekh lo). Email kho gaya ho to mujhe woh email address aur payment id (“pay_” ya “FREE-” se shuru) bata do — main team ko lookup ke liye de dungi.',
+      en: 'Order history 📧 — there is no separate “my orders” page on the site. Every paid order gets a bill + receipt email that also carries the private manage link: open it to see the card, or delete it for good (deleting cannot be undone). Search your inbox for “isZma” (older receipts say “Ishmaverse”; check Spam/Promotions too). If the email is lost, tell me the email address you used and the payment id (it starts with “pay_” or “FREE-”), and I’ll pass it to the team to look up.',
+      hi: 'Order history 📧 — site par alag “my orders” page nahi hai. Har paid order ki bill + receipt email aati hai, jisme private manage link bhi hota hai: usse card dekh sakte ho, ya permanently delete kar sakte ho (delete undo nahi hota). Apne inbox me “isZma” search karo (purani receipts me “Ishmaverse” likha hoga; Spam/Promotions bhi dekh lo). Email kho gaya ho to mujhe woh email address aur payment id (“pay_” ya “FREE-” se shuru) bata do — main team ko lookup ke liye de dungi.',
     },
   },
   {
@@ -505,14 +505,17 @@ export const JOY_FAQ: JoyFaqEntry[] = [
     keywords: [
       'ishmaverse', 'about ishmaverse', 'what is ishmaverse', 'ishmaverse kya',
       'ishmaverse ke baare', 'ishmaverse ke bare', 'ishmaverse about', 'tell me about ishmaverse',
+      'iszma', 'about iszma', 'what is iszma', 'iszma kya', 'iszma ke baare',
+      'iszma ke bare', 'iszma about', 'tell me about iszma', 'digital mall kya hai',
       'what is this site', 'what is this website', 'what is this place', 'this site kya',
       'ye site kya', 'ye website kya', 'is site par', 'what can i do here', 'what can i buy here',
       'what do you sell', 'what do you have', 'kya bechte', 'kya kya milta', 'yahan kya kya hai',
       'mall me kya', 'mall kya hai', 'digital mall', 'online mall', 'ishmaverse par kya',
+      'iszma par kya',
     ],
     reply: {
-      en: `Ishmaverse is a digital mall — one place for digital products instead of one shop. Live right now: ${LIVE_SECTION_LINE} — animated greeting cards that stay live for 48 hours (a FREE Welcome Card plus paid tiers at ${TIER_PRICE_LINE}), print-ready report cards generated from an Excel mark sheet (first 7 generations free, then ₹369 / ₹578 / ₹859 for six months), and Game Zone with Pair-3Balls (vs Computer offline, a Private Room code, or a World Match). Coming soon: ${COMING_SOON_LINE}. Prices show in ₹ inside India and in $ elsewhere; payment runs on Razorpay (UPI, cards, netbanking) inside India and PayPal/Stripe outside, and we never store your card details. Ask me about any section, price or problem and I will answer or take you straight there.`,
-      hi: `Ishmaverse ek digital mall hai — ek hi jagah par digital products, alag-alag dukaanon me bhatakne ki zaroorat nahi. Abhi live: ${LIVE_SECTION_LINE} — animated greeting cards jo 48 ghante live rehte hain (FREE Welcome Card ke saath, paid tiers ${TIER_PRICE_LINE}), Excel mark sheet se print-ready report cards (pehli 7 generations free, uske baad ₹369 / ₹578 / ₹859 me 6 mahine) aur Game Zone me Pair-3Balls (Computer ke saath offline, Private Room code, ya World Match). Coming soon: ${COMING_SOON_LINE}. Price India me ₹ me aur bahar $ me dikhte hain; payment India me Razorpay (UPI, cards, netbanking) aur bahar PayPal/Stripe se hoti hai, aur aapke card details hum store nahi karte. Kisi bhi section, price ya problem ke baare me poochho — main jawab doongi ya seedha wahan le chalti hoon.`,
+      en: `isZma is The Digital Mall — one place for digital products instead of one shop. Live right now: ${LIVE_SECTION_LINE} — animated greeting cards that stay live for 48 hours (a FREE Welcome Card plus paid tiers at ${TIER_PRICE_LINE}), print-ready report cards generated from an Excel mark sheet (first 7 generations free, then ₹369 / ₹578 / ₹859 for six months), and Game Zone with Pair-3Balls (vs Computer offline, a Private Room code, or a World Match). Coming soon: ${COMING_SOON_LINE}. Prices show in ₹ inside India and in $ elsewhere; payment runs on Razorpay (UPI, cards, netbanking) inside India and PayPal/Stripe outside, and we never store your card details. Ask me about any section, price or problem and I will answer or take you straight there.`,
+      hi: `isZma ek digital mall hai — ek hi jagah par digital products, alag-alag dukaanon me bhatakne ki zaroorat nahi. Abhi live: ${LIVE_SECTION_LINE} — animated greeting cards jo 48 ghante live rehte hain (FREE Welcome Card ke saath, paid tiers ${TIER_PRICE_LINE}), Excel mark sheet se print-ready report cards (pehli 7 generations free, uske baad ₹369 / ₹578 / ₹859 me 6 mahine) aur Game Zone me Pair-3Balls (Computer ke saath offline, Private Room code, ya World Match). Coming soon: ${COMING_SOON_LINE}. Price India me ₹ me aur bahar $ me dikhte hain; payment India me Razorpay (UPI, cards, netbanking) aur bahar PayPal/Stripe se hoti hai, aur aapke card details hum store nahi karte. Kisi bhi section, price ya problem ke baare me poochho — main jawab doongi ya seedha wahan le chalti hoon.`,
     },
   },
   /*
@@ -542,8 +545,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'scores', 'scoreboard', 'top players', 'tournament', 'rank', 'points table',
     ],
     reply: {
-      en: '🏆 There is no leaderboard, ranking or tournament ladder in Pair-3Balls — each game is played for itself, and the result is just win or lose (or a loss on the 60-second timer; there are no draws). Nothing is publicly ranked, and your games are not posted anywhere.',
-      hi: '🏆 Pair-3Balls me koi leaderboard, ranking ya tournament ladder nahi hai — har game apne aap ke liye khela jaata hai aur result sirf jeet ya haar hota hai (ya 60-second timer khatam hone par haar; draw nahi hota). Kuch bhi publicly rank nahi hota aur aapke games kahin post nahi hote.',
+      en: '🏆 There is no leaderboard, ranking or tournament ladder in Pair-3Balls — each game is played for itself, and the result is win, loss (or a loss on the 60-second timer) or a repetition draw when the same move is played more than three times. Nothing is publicly ranked, and your games are not posted anywhere.',
+      hi: '🏆 Pair-3Balls me koi leaderboard, ranking ya tournament ladder nahi hai — har game apne aap ke liye khela jaata hai aur result jeet, haar (ya 60-second timer par haar) ya repetition draw hota hai jab wahi move teen baar se zyada khela jaaye. Kuch bhi publicly rank nahi hota aur aapke games kahin post nahi hote.',
     },
   },
   {
@@ -553,8 +556,8 @@ export const JOY_FAQ: JoyFaqEntry[] = [
       'app hai kya', 'application', 'pwa', 'add to home screen', 'home screen par',
     ],
     reply: {
-      en: '📱 Ishmaverse runs in the browser — there is no separate Play Store / App Store download to hunt for. On a phone you can open the site and use your browser’s “Add to Home screen” option to get an app-like icon that opens full-screen, and the site keeps working offline for the parts already loaded (the vs-Computer game works without a connection). ReportCard Studio is built into the same site under /reportcard.',
-      hi: '📱 Ishmaverse browser me chalta hai — Play Store / App Store par alag download nahi hai. Phone par site kholiye aur browser ke “Add to Home screen” option se app-jaisa icon bana lijiye jo full-screen khulta hai, aur jo hissa load ho chuka hai wo offline bhi chalta rehta hai (Computer ke saath game bina internet chalta hai). ReportCard Studio usi site ke andar /reportcard par hai.',
+      en: '📱 isZma runs in the browser — there is no separate Play Store / App Store download to hunt for. On a phone you can open the site and use your browser’s “Add to Home screen” option to get an app-like icon that opens full-screen, and the site keeps working offline for the parts already loaded (the vs-Computer game works without a connection). ReportCard Studio is built into the same site under /reportcard.',
+      hi: '📱 isZma browser me chalta hai — Play Store / App Store par alag download nahi hai. Phone par site kholiye aur browser ke “Add to Home screen” option se app-jaisa icon bana lijiye jo full-screen khulta hai, aur jo hissa load ho chuka hai wo offline bhi chalta rehta hai (Computer ke saath game bina internet chalta hai). ReportCard Studio usi site ke andar /reportcard par hai.',
     },
   },
 ];

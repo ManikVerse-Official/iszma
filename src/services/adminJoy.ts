@@ -4293,7 +4293,7 @@ const OPERATIONS_EXTRA: Record<JoyLanguage, string> = {
  */
 const REPORTCARD_KNOWLEDGE: Record<JoyLanguage, string> = {
   en: [
-    'ReportCard Studio is a separate report-card app embedded in Ishmaverse (Ishmaverse section "reportcard-studio"; the built app is served from public/reportcard). I am describing its real source, not a guess.',
+    'ReportCard Studio is a separate report-card app embedded in isZma (isZma section "reportcard-studio"; the built app is served from public/reportcard). I am describing its real source, not a guess.',
     'Implemented in code:',
     '• Import — an Excel parser (ReportCard Studio/src/services/dynamicExcelParser.ts, with the legacy excelParser.ts) detects student fields, subject groups with their components, co-scholastic grade columns and overall fields, and infers class, section and school.',
     '• Mapping — dynamicMappingEngine.ts / mappingEngine.ts map the detected columns to fields and validate the mapping.',
@@ -4308,7 +4308,7 @@ const REPORTCARD_KNOWLEDGE: Record<JoyLanguage, string> = {
     'Missing or planned: students, templates and generated reports are still managed inside the studio, and the free-generation allowance is read-only (it is enforced with usage counters in _shared/entitlement.ts). Plan prices (INR/USD) and the billing duration, by contrast, ARE editable from Admin Joy through the studio_plan_prices table.',
   ].join('\n'),
   hi: [
-    'ReportCard Studio ek alag report-card app hai jo Ishmaverse me embedded hai (section "reportcard-studio"; build output public/reportcard me). Main iska asli source bata rahi hoon, andaaza nahi. Code se ye pakka hai:',
+    'ReportCard Studio ek alag report-card app hai jo isZma me embedded hai (section "reportcard-studio"; build output public/reportcard me). Main iska asli source bata rahi hoon, andaaza nahi. Code se ye pakka hai:',
     'Implemented in code:',
     '• Import — Excel parser (ReportCard Studio/src/services/dynamicExcelParser.ts aur legacy excelParser.ts) student fields, subject groups aur unke components, co-scholastic grade columns aur overall fields detect karta hai, aur class/section/school infer karta hai.',
     '• Mapping — dynamicMappingEngine.ts / mappingEngine.ts detected columns ko fields se map karte hain aur mapping validate karte hain.',
@@ -4818,8 +4818,8 @@ export const planParsedAdminCommand = (
         summary: 'No brand value was found.',
         reason:
           language === 'hi'
-            ? 'Naya value quotes me bolo, jaise: brand name "Ishmaverse" set karo.'
-            : 'Give the new value in quotes, for example: set brand name to "Ishmaverse".',
+            ? 'Naya value quotes me bolo, jaise: brand name "isZma" set karo.'
+            : 'Give the new value in quotes, for example: set brand name to "isZma".',
         language,
       };
     }

@@ -1,7 +1,7 @@
 {
-  "name": "ReportCard Studio",
+  "name": "ReportCard Studio by isZma",
   "short_name": "ReportCard",
-  "description": "Excel In. Professional Report Cards Out. Upload student marks, preview the report card and download one print-ready PDF per student.",
+  "description": "ReportCard Studio by isZma — Excel In. Professional Report Cards Out. Upload student marks, preview the report card and download one print-ready PDF per student.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

@@ -40,6 +40,7 @@ try {
     createGame, applyPlace, applyMove, applyAction, findWinner, legalActions,
     legalPlacements, legalMoves, settleTimeout, serialize, deserialize,
     countPieces, remainingMs, winningLines, other, RULES, POINT_GRID,
+    MOVE_REPEAT_LIMIT, isDraw, isSameMove, repetitionsOf,
   } = engine;
 
   const T0 = 1_700_000_000_000;
@@ -231,6 +232,84 @@ try {
     check('the reported line names its owner', one[0]?.player === 'white');
     check('the reported line is the real one', (one[0]?.line ?? []).join(',') === '0,8,3');
     check('a near-miss reports no line', winningLines(board({ 0: 'white', 8: 'white', 4: 'black' })).length === 0);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* 6b. Repetition draw                                               */
+  /* ---------------------------------------------------------------- */
+  /*
+   * The same move (same side, same piece, same destination) may be played
+   * three times. The fourth identical move ends the game as a draw — in every
+   * mode, because this is the shared engine. The sequence below ping-pongs two
+   * pieces with no line ever completing.
+   */
+  {
+    const start = () =>
+      state(
+        { 0: 'white', 2: 'white', 8: 'white', 1: 'black', 5: 'black', 6: 'black' },
+        'white',
+        'movement',
+      );
+    const cycle = [
+      [0, 7],
+      [1, 4],
+      [7, 0],
+      [4, 1],
+    ];
+    check('the repeat limit is three plays of one move', MOVE_REPEAT_LIMIT === 3, String(MOVE_REPEAT_LIMIT));
+
+    let game = start();
+    let last = null;
+    for (let i = 0; i < 12; i += 1) {
+      const [from, to] = cycle[i % cycle.length];
+      const outcome = applyMove(game, from, to, T0 + i * 1000);
+      check(`repetition sequence move ${i + 1} is legal`, outcome.ok, outcome.code);
+      if (!outcome.ok) break;
+      game = outcome.state;
+      last = { from, to };
+    }
+    check('three repeats of a move are still playable', game.phase === 'movement' && game.winner === null);
+    check(
+      'the history really holds the move three times',
+      repetitionsOf(game.history, { kind: 'move', player: 'white', from: 0, to: 7 }) === 3,
+      String(repetitionsOf(game.history, { kind: 'move', player: 'white', from: 0, to: 7 })),
+    );
+
+    // The 13th ply is White repeating 0 -> 7 for the fourth time.
+    const deciding = applyMove(game, 0, 7, T0 + 12_000);
+    check('the fourth repeat is applied, not rejected', deciding.ok, deciding.code);
+    check('the game ends on the fourth repeat', deciding.state.phase === 'finished');
+    check('nobody wins on a repetition draw', deciding.state.winner === null);
+    check('the reason is recorded as a repetition', deciding.state.reason === 'repetition');
+    check('the draw is reported by isDraw', isDraw(deciding.state) === true);
+    check('a draw is not a win for either side', !deciding.state.winner);
+    check('the draw freezes the clock', remainingMs(deciding.state, T0 + 200_000) === 0);
+    check('the draw records an end time', typeof deciding.state.endedAt === 'number');
+
+    const after = applyMove(deciding.state, 7, 0, T0 + 13_000);
+    check('no move is accepted after a repetition draw', !after.ok && after.code === 'finished');
+    check('a finished draw offers no legal actions', legalActions(deciding.state).length === 0);
+
+    // Different sides doing the same step are NOT the same move.
+    check(
+      'the same step by the other side is a different move',
+      !isSameMove(
+        { kind: 'move', player: 'white', from: 0, to: 7 },
+        { kind: 'move', player: 'black', from: 0, to: 7 },
+      ),
+    );
+    // A different destination is not a repeat either, so the rule never fires early.
+    check(
+      'a different destination is not a repeat',
+      repetitionsOf(game.history, { kind: 'move', player: 'white', from: 0, to: 4 }) === 0,
+    );
+    check(
+      'placements are distinct from movement',
+      !isSameMove(
+        { kind: 'place', player: 'white', to: 7 },
+        { kind: 'move', player: 'white', from: 0, to: 7 },
+      ),
+    );
   }
 
   /* ---------------------------------------------------------------- */
@@ -455,6 +534,35 @@ try {
       'the server enforces the deadline before applying a move',
       /v_now >= v_room\.turn_deadline_at/.test(section('game_submit_move', 'game_settle_timeout')),
     );
+
+    /* -- the repetition draw is enforced server-side too -- */
+    const drawSql = fs.readFileSync(
+      new URL('../supabase/migrations/20261028_step21_pair3balls_repetition_draw.sql', import.meta.url),
+      'utf8',
+    );
+    check(
+      'the server function owns the repetition draw',
+      drawSql.includes('create or replace function public.game_submit_move'),
+    );
+    check(
+      `the server allows exactly ${MOVE_REPEAT_LIMIT} repeats before drawing`,
+      drawSql.includes('v_repeat > 3') && /v_repeat := coalesce\(\(v_repeats ->> v_key\)::int, 0\) \+ 1/.test(drawSql),
+    );
+    check(
+      'a winning move still wins before the repetition rule applies',
+      /v_draw := v_winner is null and v_repeat > 3/.test(drawSql),
+    );
+    check(
+      'the server finishes the room on a draw with no winner',
+      /status = case when v_winner is not null or v_draw then 'finished'/.test(drawSql) &&
+        /winner_side = v_winner/.test(drawSql) &&
+        /when v_draw then 'repetition'/.test(drawSql),
+    );
+    check('the server logs the draw', drawSql.includes("'game_drawn'"));
+    check(
+      'the repeat counts live in the room state',
+      /'repeats', jsonb_set\(v_repeats/.test(drawSql),
+    );
     for (const [fn, next] of [
       ['game_submit_move', 'game_settle_timeout'],
       ['game_settle_timeout', 'game_leave_room'],
@@ -554,7 +662,14 @@ try {
   check('the rules mention three pieces each', /three of their own pieces/i.test(RULES.win));
   check('the rules state there are no captures', /never captured/i.test(RULES.capture));
   check('the rules state the 60-second timer', /60-second timer/i.test(RULES.timer));
-  check('the rules state there is no draw', /no draw/i.test(RULES.draw));
+  check(
+    'the rules no longer claim there is no draw at all',
+    !/no draw in the official ruleset/i.test(RULES.draw),
+  );
+  check(
+    'the rules explain the repetition draw',
+    /repetition|repeat/i.test(RULES.draw) && /three times/i.test(RULES.draw) && /draw/i.test(RULES.draw),
+  );
 } finally {
   await server.close();
 }
@@ -565,4 +680,4 @@ if (problems.length) {
   for (const problem of problems) console.log(`  • ${problem}`);
   process.exit(1);
 }
-console.log('\n✓ Pair-3Balls OK — one rules engine, no captures, no illegal moves, three real difficulties.');
+console.log('\n✓ Pair-3Balls OK — one rules engine, no captures, no illegal moves, repetition draw, three real difficulties.');

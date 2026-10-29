@@ -10,6 +10,8 @@ import { GreetingCardVisual } from './GreetingCardVisual';
 import { getGreetingCard, isCardExpired } from '../services/greetingService';
 import { DEFAULT_AUDIO_TRACKS } from '../data/audio';
 import { useCatalog } from '../context/CatalogContext';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle } from '../services/seo';
 
 const FLOATERS: Record<GreetingTheme['animation'], string[]> = {
   confetti: ['🎉', '🎊', '🎈', '✨', '🎁'],
@@ -41,6 +43,13 @@ export const GreetingViewer: React.FC<GreetingViewerProps> = ({ cardId }) => {
   const openTimer = useRef<number | null>(null);
   const { brand } = useBrand();
   const { themes } = useCatalog();
+
+  usePageMeta({
+    title: pageTitle('A greeting card for you'),
+    description: 'Someone sent you a private isZma greeting card.',
+    path: `/greet/${id ?? 'private'}`,
+    noindex: true,
+  });
 
   const reducedMotion = useMemo(() => {
     try {

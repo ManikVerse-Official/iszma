@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   Bot,
   Users,
+  MonitorSmartphone,
   Globe2,
   ArrowLeft,
   AlertCircle,
@@ -24,21 +25,25 @@ import { OnlineMatch } from '../components/game/OnlineMatch';
 import type { Difficulty } from '../game/pair3balls/ai';
 import { DEFAULT_GAME_ID, GAME_LIBRARY, getGame, type GameEntry } from '../game/registry';
 import { fetchGameSettings } from '../services/gameZone';
+import { IsZmaWatermarkBg } from '../components/brand/IsZmaWatermarkBg';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { pageTitle } from '../services/seo';
 
 /**
  * Game Zone — a game library.
  *
  *   library  → one tile per registered game (icon, title, description, status,
  *              Play button). Nothing is invented to fill the shelf.
- *   game     → the chosen game's own screen: description, the three modes
- *              (Play vs Computer / Private Room / World Match) and its rules.
+ *   game     → the chosen game's own screen: description, the four modes
+ *              (vs Computer / Two Players on one device / Private Room / World
+ *              Match) and its rules.
  *   difficulty / computer / private / world / match → the actual play surfaces.
  *
  * Local (computer) play needs no backend. The online modes need Supabase; when
  * it is not configured they say so instead of pretending to be online.
  */
 
-type Screen = 'library' | 'game' | 'difficulty' | 'computer' | 'private' | 'world' | 'match';
+type Screen = 'library' | 'game' | 'difficulty' | 'computer' | 'local' | 'private' | 'world' | 'match';
 
 const GAME_ICONS: Record<GameEntry['icon'], React.ReactNode> = {
   target: <Target className="w-6 h-6" />,
@@ -54,6 +59,15 @@ export const GameZone: React.FC = () => {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [roomId, setRoomId] = useState<string | null>(null);
   const [onlineAvailable, setOnlineAvailable] = useState<boolean | null>(null);
+
+  usePageMeta({
+    title: pageTitle('Game Zone — Pair-3Balls'),
+    description:
+      'Play Pair-3Balls in the isZma Game Zone: against the computer offline, with a friend on one device, in a private room, or in a world match.',
+    /* An invite link is user-owned and must never enter search results. */
+    path: initialCode ? `/game-zone/room/${initialCode.toLowerCase()}` : '/game-zone',
+    noindex: Boolean(initialCode),
+  });
 
   useEffect(() => {
     let active = true;
@@ -77,16 +91,29 @@ export const GameZone: React.FC = () => {
 
   const openMode = (mode: GameEntry['modes'][number]['id']) => {
     if (mode === 'computer') setScreen('difficulty');
+    else if (mode === 'local') setScreen('local');
     else if (mode === 'private') setScreen('private');
     else setScreen('world');
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+    <div className="relative isolate min-h-screen bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+      <IsZmaWatermarkBg />
       <Navbar searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
 
       <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto space-y-8">
+          {/* Same top-left exit used by the other sections (ReportCard Studio,
+              section pages, Founder). Sits above every Game Zone screen so the
+              mall is always one click away, including mid-game. */}
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to mall
+          </Link>
+
           {/* ── Library ─────────────────────────────────────────────── */}
           {screen === 'library' && (
             <>
@@ -192,7 +219,7 @@ export const GameZone: React.FC = () => {
                 </p>
               )}
 
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {game.modes.map((mode) => {
                   const available = mode.online ? online : true;
                   return (
@@ -206,6 +233,8 @@ export const GameZone: React.FC = () => {
                       <span className="text-neon-purple">
                         {mode.id === 'computer' ? (
                           <Bot className="w-6 h-6" />
+                        ) : mode.id === 'local' ? (
+                          <MonitorSmartphone className="w-6 h-6" />
                         ) : mode.id === 'private' ? (
                           <Users className="w-6 h-6" />
                         ) : (
@@ -229,8 +258,9 @@ export const GameZone: React.FC = () => {
 
               <p className="flex items-start gap-2 text-xs text-gray-500">
                 <Info className="w-4 h-4 mt-0.5 shrink-0" />
-                All three modes use the same official rules and the same 60-second turn timer. There
-                is no capturing and no draw — a game ends only by three in a row or by a timeout.
+                All four modes use the same rules and the same 60-second turn timer. There is no
+                capturing; a game ends by three in a row, by a timeout, or as a draw when the same
+                move is repeated more than three times.
               </p>
             </>
           )}
@@ -272,6 +302,14 @@ export const GameZone: React.FC = () => {
                 difficulty={difficulty}
                 onExit={() => setScreen('game')}
               />
+            </div>
+          )}
+
+          {/* 1b. Two players, one device (pass and play) */}
+          {screen === 'local' && (
+            <div className="space-y-4">
+              <BackButton label="Modes" onClick={() => setScreen('game')} />
+              <Pair3BallsGame mode="local" onExit={() => setScreen('game')} />
             </div>
           )}
 

@@ -232,7 +232,17 @@ try {
   check('the movement answer says pieces are not captured', /(never captured|capture)/i.test(movementQ?.reply ?? ''));
 
   const modesQ = resolveJoyQuery('how do i play with a friend', 'en');
-  check('Joy explains the three modes', /(Private Room|World Match)/.test(modesQ?.reply ?? ''));
+  check('Joy explains the four modes', /(Private Room|World Match)/.test(modesQ?.reply ?? ''));
+  check(
+    'Joy mentions two players on one device',
+    /(two players|one device)/i.test(modesQ?.reply ?? ''),
+    modesQ?.reply,
+  );
+  check(
+    'Joy does not claim there are no draws',
+    /draw/i.test(modesQ?.reply ?? '') && !/no draw/i.test(modesQ?.reply ?? ''),
+    modesQ?.reply,
+  );
 
   /* ---------- Pair-3Balls: gameplay coaching is refused ---------- */
   const coaching = [
@@ -335,8 +345,8 @@ try {
   check('off-topic questions resolve to nothing (caller falls back)', offEn === null && offHi === null);
   const fallbackEn = getFallback('en');
   const fallbackHi = getFallback('hi');
-  check('the English fallback is polite and scoped', /only help with/i.test(fallbackEn) && /Ishmaverse/.test(fallbackEn));
-  check('the Hinglish fallback is polite and scoped', /sirf Ishmaverse/.test(fallbackHi));
+  check('the English fallback is polite and scoped', /only help with/i.test(fallbackEn) && /isZma/.test(fallbackEn));
+  check('the Hinglish fallback is polite and scoped', /sirf isZma/.test(fallbackHi));
   check('the two fallbacks are different languages', fallbackEn !== fallbackHi);
 
   console.log(`\njoy rules checked: ${checked}`);

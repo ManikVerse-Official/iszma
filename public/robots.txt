@@ -1,0 +1,14 @@
+# isZma — The Digital Mall
+# Public pages are crawlable; private, transactional and user-owned pages are not.
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /manage/
+Disallow: /checkout/
+Disallow: /create-greeting
+Disallow: /game-zone/room/
+Disallow: /greet/
+
+Sitemap: __SITE_URL__/sitemap.xml

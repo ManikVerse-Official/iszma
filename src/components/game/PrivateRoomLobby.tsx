@@ -135,7 +135,7 @@ export const PrivateRoomLobby: React.FC<PrivateRoomLobbyProps> = ({
   };
 
   const share = async () => {
-    const text = `Play Pair-3Balls with me on Ishmaverse. Room code: ${room?.code}`;
+    const text = `Play Pair-3Balls with me on isZma. Room code: ${room?.code}`;
     const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void> };
     if (nav.share) {
       try {
@@ -252,7 +252,7 @@ export const PrivateRoomLobby: React.FC<PrivateRoomLobbyProps> = ({
               </button>
               <a
                 href={`https://wa.me/?text=${encodeURIComponent(
-                  `Play Pair-3Balls with me on Ishmaverse. Room code: ${room.code}\n${inviteLink}`,
+                  `Play Pair-3Balls with me on isZma. Room code: ${room.code}\n${inviteLink}`,
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"

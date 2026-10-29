@@ -229,7 +229,7 @@ export const GreetingCardVisual: React.FC<GreetingCardVisualProps> = ({
   message,
   imageUrl,
   fontId,
-  watermarkName = 'Ishmaverse',
+  watermarkName = 'isZma',
   watermarkHref,
   compact = false,
   animate = true,

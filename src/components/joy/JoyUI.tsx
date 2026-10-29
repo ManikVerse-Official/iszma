@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 import { MessageCircle, Minus, Send, User, X } from 'lucide-react';
-import ishmaverseLogo from '../../ishmaverse.png';
 import { SmartImage } from '../SmartImage';
+
+/** The primary 3D mark, served from the public brand folder. */
+const BRAND_LOGO = '/logos/iszma-primary-logo.png';
 
 /**
  * Shared chrome for Joy's floating assistant.
@@ -56,7 +58,7 @@ export const JoyGreetingTooltip: React.FC<{
   onOpen: () => void;
   onDismiss: () => void;
 }> = ({ title, text, onOpen, onDismiss }) => (
-  <div className="relative max-w-[78vw] sm:max-w-xs bg-bg-dark-end border border-neon-purple/50 rounded-2xl rounded-br-sm px-4 py-3 shadow-neon text-left">
+  <div className="relative max-w-[17rem] bg-bg-dark-end border border-neon-purple/50 rounded-2xl rounded-br-sm px-4 py-3 shadow-neon text-left sm:max-w-xs">
     <button
       type="button"
       onClick={onDismiss}
@@ -143,7 +145,7 @@ export const JoyPanel: React.FC<{
   >
     <div className="flex items-center justify-between p-4 border-b border-neon-purple/30 bg-gradient-to-r from-bg-dark-end to-bg-dark-start">
       <div className="flex items-center gap-3 min-w-0">
-        <SmartImage src={ishmaverseLogo} alt="IshMaVerse" className="w-8 h-8" />
+        <SmartImage src={BRAND_LOGO} alt="" className="w-8 h-8 object-contain" />
         <span className="font-bold text-white text-sm sm:text-base truncate">{title}</span>
       </div>
       <div className="flex items-center gap-2 shrink-0">

@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../services/supabase';
+import { useBrand } from '../context/BrandContext';
+import { SmartImage } from './SmartImage';
+import { IsZmaWordmark } from './brand/IsZmaWordmark';
+import { IsZmaWatermarkBg } from './brand/IsZmaWatermarkBg';
 
 /**
  * Where the embedded ReportCard Studio build lives.
@@ -43,6 +47,7 @@ const STUDIO_ORIGIN = (() => {
  * this is a transport, not a permission.
  */
 export const ReportCardStudio: React.FC = () => {
+  const { brand } = useBrand();
   const [loaded, setLoaded] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -94,28 +99,39 @@ export const ReportCardStudio: React.FC = () => {
   }, [sendSession]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
-      {/* Ishmaverse chrome around the embedded tool */}
+    <div className="relative isolate min-h-screen flex flex-col bg-gradient-to-br from-bg-dark-start to-bg-dark-end">
+      <IsZmaWatermarkBg />
+      {/* Brand chrome around the embedded tool */}
       <header className="shrink-0 border-b border-neon-purple/25 bg-bg-dark-end/80 backdrop-blur">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center gap-3">
           <Link
             to="/"
-            className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+            className="inline-flex shrink-0 items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="hidden sm:inline">Back to mall</span>
           </Link>
 
-          <div className="flex items-center gap-2 min-w-0 ml-2">
-            <span className="text-xl">📊</span>
-            <div className="min-w-0">
-              <h1 className="text-sm font-bold text-white leading-tight truncate">
-                ReportCard Studio
-              </h1>
-              <p className="text-[11px] text-gray-400 leading-tight truncate">
-                Excel in. Professional report cards out.
-              </p>
-            </div>
+          <Link
+            to="/"
+            aria-label={`${brand.site_name} — ${brand.brand_tagline}, go to the mall home`}
+            className="ml-1 flex min-w-0 items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-neon-purple"
+          >
+            <SmartImage
+              src={brand.logo_url}
+              alt=""
+              className="h-7 w-7 shrink-0 object-contain bg-transparent border-0 shadow-none sm:h-8 sm:w-8"
+            />
+            <IsZmaWordmark className="hidden text-lg sm:inline-flex" />
+          </Link>
+
+          <div className="min-w-0 border-l border-white/10 pl-3">
+            <h1 className="text-sm font-bold text-white leading-tight truncate">
+              ReportCard Studio
+            </h1>
+            <p className="hidden text-[11px] text-gray-400 leading-tight truncate sm:block">
+              Excel in. Professional report cards out.
+            </p>
           </div>
         </div>
       </header>

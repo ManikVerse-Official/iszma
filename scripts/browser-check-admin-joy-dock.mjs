@@ -231,6 +231,37 @@ try {
     (await page.locator('main').innerText()).includes('Here is what I can change for you'),
   );
 
+  /* ── system diagnostics ───────────────────────────────────────────── */
+  await page.waitForSelector('text=System diagnostics', { timeout: 15000 });
+  const diagnosticsText = await page.locator('main').innerText();
+  check('the console shows the system diagnostics panel', true);
+  check(
+    '…with a run control',
+    /Run diagnostics|Running/.test(diagnosticsText),
+    diagnosticsText.match(/(Run diagnostics|Running…)/)?.[0] ?? 'no control',
+  );
+  /*
+   * The Edge Functions are stubbed with an empty body here, so the server half
+   * cannot be verified. The panel must say so and must NOT print the green
+   * “healthy” badge — that would be success inferred from a stub.
+   */
+  check(
+    '…and does not claim health when the server checks could not run',
+    !/\bhealthy\b/.test(diagnosticsText),
+    diagnosticsText.slice(0, 200).replace(/\n+/g, ' '),
+  );
+  check(
+    '…naming the server diagnostics gap',
+    /Server diagnostics/i.test(diagnosticsText),
+  );
+  const rerun = page.getByRole('button', { name: /Run diagnostics/ });
+  if (await rerun.count()) await rerun.first().click();
+  await page.waitForTimeout(600);
+  check(
+    're-running diagnostics leaves the console usable',
+    (await page.locator('[aria-label="Ask Admin Joy"]').count()) === 1,
+  );
+
   /* ── “Full console” from the dock reaches that tab ────────────────── */
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await launcher.click();

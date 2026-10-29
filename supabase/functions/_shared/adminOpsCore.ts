@@ -507,7 +507,7 @@ export const validateAdminOpRequest = (
       const logo = asTrimmedString(value, LIMITS.logoUrl);
       const safeLogo = logo && (/^https?:\/\//i.test(logo) || /^\/(?!\/)/.test(logo));
       if (!logo || !safeLogo) {
-        return fail(400, 'logo_url must be an http(s) URL or a site-relative path such as /ishmaverse.png.', action);
+        return fail(400, 'logo_url must be an http(s) URL or a site-relative path such as /logos/iszma-primary-logo.png.', action);
       }
       accepted[key] = logo;
       continue;

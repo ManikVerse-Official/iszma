@@ -14,7 +14,7 @@ import { RULES } from './pair3balls/engine';
  * rather than filled with a mocked-up "coming soon" game.
  */
 
-export type GameModeId = 'computer' | 'private' | 'world';
+export type GameModeId = 'computer' | 'local' | 'private' | 'world';
 
 export interface GameMode {
   id: GameModeId;
@@ -43,12 +43,23 @@ export interface GameEntry {
   rules: typeof RULES;
 }
 
-/** The three modes are fixed by the product: no more, no fewer. */
+/**
+ * The product modes: two that work with no connection (vs Computer, and two
+ * players sharing one device) and the two online ones (Private Room, World
+ * Match). Every mode runs the same rules engine, including the repetition draw.
+ */
 const STANDARD_MODES: GameMode[] = [
   {
     id: 'computer',
     title: 'Play vs Computer',
     blurb: 'Three difficulties, from a beginner you can beat to a strong search opponent.',
+    online: false,
+    label: 'works offline',
+  },
+  {
+    id: 'local',
+    title: 'Two Players — One Device',
+    blurb: 'Pass and play: you and a friend share this screen and alternate turns.',
     online: false,
     label: 'works offline',
   },
@@ -73,7 +84,7 @@ const PAIR_3_BALLS: GameEntry = {
   title: 'Pair-3Balls',
   tagline: 'Nine points, three pieces each, one line to win.',
   description:
-    'Place your three pieces, then step them along the connected lines. First to three in a row takes it — there are no captures and no draws, and every turn runs on a 60-second clock.',
+    'Place your three pieces, then step them along the connected lines. First to three in a row takes it — there are no captures, a move repeated more than three times ends the game as a draw, and every turn runs on a 60-second clock.',
   icon: 'target',
   offline: true,
   difficultyOptions: DIFFICULTIES.map((entry) => ({

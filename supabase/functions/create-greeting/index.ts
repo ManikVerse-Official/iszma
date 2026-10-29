@@ -30,6 +30,10 @@ import {
   type VerifiedPayment,
 } from "../_shared/payments.ts";
 
+import { clientIp } from "../_shared/entitlement.ts";
+import { issueReceiptForTransaction } from "../_shared/receipts.ts";
+import type { ReceiptLedgerRow } from "../_shared/receiptsCore.ts";
+
 
 
 const GREETING_LIFESPAN_HOURS = 48;
@@ -183,6 +187,52 @@ const safeAngle = (
   return Math.round(
     ((n % 360) + 360) % 360
   );
+};
+
+
+/* -----------------------------------------------------------
+   RECEIPT HELPER
+
+   Never throws: an email/receipt problem must not turn a settled payment into
+   an error the buyer sees. The result is shaped for the browser so it does not
+   send a second copy.
+----------------------------------------------------------- */
+
+interface ReceiptInfo {
+  receipt: Record<string, unknown>;
+  emailed: boolean;
+  emailStatus: string;
+  error?: string;
+}
+
+const safeIssueReceipt = async (
+  supabase: ReturnType<typeof createAdminClient>,
+  transaction: ReceiptLedgerRow | null | undefined,
+  req: Request,
+): Promise<ReceiptInfo | null> => {
+  if (!transaction?.id || !transaction.payment_id) return null;
+
+  try {
+    const issued = await issueReceiptForTransaction(supabase, transaction, {
+      ip: clientIp(req),
+    });
+    if (!issued.receipt) {
+      console.error("Receipt not issued:", issued.error);
+      return null;
+    }
+    return {
+      receipt: issued.receipt as unknown as Record<string, unknown>,
+      emailed: issued.emailed,
+      emailStatus: issued.emailStatus,
+      ...(issued.error ? { error: issued.error } : {}),
+    };
+  } catch (error) {
+    console.error(
+      "Receipt issuance failed (purchase kept):",
+      error instanceof Error ? error.message : String(error),
+    );
+    return null;
+  }
 };
 
 
@@ -606,6 +656,18 @@ serve(async (req: Request) => {
 
           if (existingCard) {
 
+            /*
+             * A retried callback must not mint a second card, and must not be
+             * told the order failed. If the first attempt crashed after writing
+             * the ledger but before the receipt, this idempotent call fills that
+             * gap without emailing twice.
+             */
+            const duplicateReceipt = await safeIssueReceipt(
+              supabase,
+              existingTx as unknown as ReceiptLedgerRow,
+              req,
+            );
+
             return jsonResponse({
 
               success: true,
@@ -615,6 +677,8 @@ serve(async (req: Request) => {
               card: existingCard,
 
               transaction: existingTx,
+
+              ...(duplicateReceipt ? { receipt: duplicateReceipt } : {}),
 
             });
 
@@ -1059,6 +1123,49 @@ serve(async (req: Request) => {
         "23505"
       ) {
 
+        /*
+         * A concurrent callback (not a replay of a finished order) won the
+         * ledger insert. Return the card it created instead of telling the
+         * buyer their successful purchase failed.
+         */
+        const {
+          data: winnerCard,
+        } = await supabase
+          .from("greeting_cards")
+          .select("*")
+          .eq(
+            "payment_id",
+            paymentId
+          )
+          .maybeSingle();
+
+        if (winnerCard) {
+
+          const {
+            data: winnerTx,
+          } = await supabase
+            .from("transactions")
+            .select("*")
+            .eq(
+              "payment_id",
+              paymentId
+            )
+            .maybeSingle();
+
+          return jsonResponse({
+
+            success: true,
+
+            duplicate: true,
+
+            card: winnerCard,
+
+            transaction: winnerTx,
+
+          });
+
+        }
+
         return errorResponse(
           "This payment has already been used",
           409
@@ -1076,6 +1183,22 @@ serve(async (req: Request) => {
 
 
     /* =======================================================
+       RECEIPT (server-side, after a verified payment)
+
+       This is the ONLY place a purchase receipt is minted. It runs after the
+       gateway verification and the ledger write, is idempotent on the payment
+       id, retries transient email failures, and logs every attempt. A failure
+       here is reported in `receipt`, never as a failed purchase.
+    ======================================================= */
+
+    const receiptInfo = await safeIssueReceipt(
+      supabase,
+      transaction as unknown as ReceiptLedgerRow,
+      req,
+    );
+
+
+    /* =======================================================
        SUCCESS
     ======================================================= */
 
@@ -1088,6 +1211,8 @@ serve(async (req: Request) => {
           settlement.amount,
         provider:
           settlement.provider,
+        receiptIssued: Boolean(receiptInfo?.receipt),
+        receiptEmailed: receiptInfo?.emailed ?? false,
       }
     );
 
@@ -1099,6 +1224,8 @@ serve(async (req: Request) => {
       card,
 
       transaction,
+
+      ...(receiptInfo ? { receipt: receiptInfo } : {}),
 
     });
 
@@ -1117,8 +1244,21 @@ serve(async (req: Request) => {
     );
 
 
+    /*
+     * Only payment-verification wording is safe to echo back. A database,
+     * storage or provider error can carry internal detail, so the buyer gets a
+     * generic sentence that still tells them nothing was necessarily lost.
+     */
+    const safeToEcho =
+      /^(Incomplete (Razorpay|PayPal|Stripe) payment proof|Razorpay signature verification failed|Could not verify (Razorpay|Stripe) payment|Payment does not match order|Payment is not settled|Paid amount does not match|Captured amount does not match|PayPal order is not completed|Demo payments are disabled|This card is free|Payment is required|This payment has already been used)/.test(
+        message
+      );
+
+
     return errorResponse(
-      message,
+      safeToEcho
+        ? message
+        : "We could not complete this purchase. If money was deducted, nothing else was charged — contact support with your payment reference.",
       500
     );
 

@@ -9,6 +9,7 @@ import {
   remainingMs,
   settleTimeout,
   winningLines,
+  isDraw,
   type GameState,
   type Player,
   type Point,
@@ -92,7 +93,8 @@ export const Pair3BallsGame: React.FC<Pair3BallsGameProps> = ({
   }, [vsComputer, game.turn, game.moveCount, game.winner, aiSide, difficulty]);
 
   /* ---- interaction ---------------------------------------------- */
-  const canPlay = !game.winner && playableSide(game, vsComputer ? humanSide : null);
+  const canPlay =
+    game.phase !== 'finished' && !game.winner && playableSide(game, vsComputer ? humanSide : null);
 
   const movableSources = useMemo(() => {
     if (game.phase !== 'movement' || !canPlay) return [] as Point[];
@@ -164,6 +166,7 @@ export const Pair3BallsGame: React.FC<Pair3BallsGameProps> = ({
   };
 
   const status = (() => {
+    if (isDraw(game)) return 'Draw — the same move was repeated more than three times.';
     if (game.winner) {
       const winner = sideLabel(game.winner);
       return game.reason === 'timeout'
@@ -287,6 +290,27 @@ export const Pair3BallsGame: React.FC<Pair3BallsGameProps> = ({
         </div>
       )}
 
+      {/* Repetition draw */}
+      {isDraw(game) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-4">
+          <div className="flex items-center gap-2 text-amber-200">
+            <Users className="w-5 h-5" />
+            <span className="font-semibold">Draw</span>
+            <span className="text-sm text-amber-200/80">
+              (same move repeated more than three times)
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={restart}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-300 text-[#0b0514] font-semibold text-sm hover:bg-amber-200 transition-colors"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Play again
+          </button>
+        </div>
+      )}
+
       {/* Move log */}
       {recent.length > 0 && (
         <div className="rounded-2xl border border-white/10 p-4">
@@ -313,6 +337,7 @@ export const Pair3BallsGame: React.FC<Pair3BallsGameProps> = ({
         <p>{RULES.movement}</p>
         <p>{RULES.win}</p>
         <p>{RULES.capture} {RULES.timer}</p>
+        <p>{RULES.draw}</p>
       </div>
     </div>
   );

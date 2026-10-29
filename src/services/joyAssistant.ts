@@ -149,8 +149,8 @@ export const JOY_TOPICS: JoyTopic[] = [
       'game kaha', 'game kahan', 'games kaha', 'khelne kaha', 'khelne ka section',
     ],
     reply: {
-      en: 'Game Zone 🎮 lives in the “Game Zone” section of the mall. Inside is Pair-3Balls — nine points, three pieces each, one line to win, 60 seconds a turn — in three modes: vs Computer (works offline), a Private Room you invite a friend to with a code, and World Match against a real player. When the backend is off, the section says the online modes are unavailable instead of pretending. Want me to open it?',
-      hi: 'Game Zone 🎮 mall ke “Game Zone” section me hai. Andar Pair-3Balls hai — nau points, teen pieces, ek line banao aur jeeto, har turn 60 second — teen modes me: Computer ke saath (offline chalta hai), Private Room (code se dost ko bulao) aur World Match (asli player se). Backend off ho to section saaf likhta hai ki online modes available nahi hain, dikhawa nahi karta. Khol doon?',
+      en: 'Game Zone 🎮 lives in the “Game Zone” section of the mall. Inside is Pair-3Balls — nine points, three pieces each, one line to win, 60 seconds a turn — in four modes: vs Computer (works offline), Two Players on one device (also offline), a Private Room you invite a friend to with a code or a link, and World Match against a real player. The same move repeated more than three times draws the game. When the backend is off, the section says the online modes are unavailable instead of pretending. Want me to open it?',
+      hi: 'Game Zone 🎮 mall ke “Game Zone” section me hai. Andar Pair-3Balls hai — nau points, teen pieces, ek line banao aur jeeto, har turn 60 second — chaar modes me: Computer ke saath (offline chalta hai), Two Players ek hi device par (ye bhi offline), Private Room (code ya link se dost ko bulao) aur World Match (asli player se). Wahi move teen baar se zyada dohrane par game draw ho jaata hai. Backend off ho to section saaf likhta hai ki online modes available nahi hain, dikhawa nahi karta. Khol doon?',
     },
     actionLabel: { en: 'Open Game Zone', hi: 'Game Zone kholo' },
   },
@@ -260,8 +260,8 @@ export const JOY_TOPICS: JoyTopic[] = [
  * navigating. Joy never invents details — just the name and the offer.
  */
 export const FOUNDER_INTRO: JoyText = {
-  en: 'Ishmaverse is founded by Manik. Would you like to see his profile?',
-  hi: 'Ishmaverse ke founder Manik hain. Unka profile dekhna chahenge?',
+  en: 'isZma is founded by Manik. Would you like to see his profile?',
+  hi: 'isZma ke founder Manik hain. Unka profile dekhna chahenge?',
 };
 
 export const FOUNDER_YES: JoyText = {
@@ -307,7 +307,7 @@ const PRICING_WORDS = [
 /** "What can you do / what is this site" words. */
 const HELP_WORDS = [
   'help', 'madad', 'what can you do', 'kya kar sakte', 'kya kar sakti', 'sections', 'section',
-  'mall', 'what is this', 'kya hai', 'about', 'ishmaverse kya', 'kya kya hai', 'list',
+  'mall', 'what is this', 'kya hai', 'about', 'ishmaverse kya', 'iszma kya', 'kya kya hai', 'list',
 ];
 
 /** Founder / ownership words. */
@@ -401,8 +401,8 @@ const comingSoonLine = (): string =>
     .join(', ');
 
 const HELP_REPLY: JoyText = {
-  en: `I’m Joy, the assistant here at Ishmaverse. Live right now: ${liveSectionLine()} — animated greeting cards (including a FREE Welcome Card you can send again and again), print-ready report cards from an Excel mark sheet (7 free generations per account), and Game Zone’s Pair-3Balls against the computer, a friend or a real opponent. Still “coming soon”: ${comingSoonLine()}. Ask me about prices, payment, fonts and music, card lifetime, or what usually goes wrong in any section — name a section or a problem and I’ll answer it or take you straight there.`,
-  hi: `Main Joy hoon, Ishmaverse ki assistant. Abhi live: ${liveSectionLine()} — animated greeting cards (FREE Welcome Card bhi, jo aap baar baar bhej sakte ho), Excel mark sheet se print-ready report cards (per account 7 free generations), aur Game Zone me Pair-3Balls (computer, dost ya asli opponent ke saath). “Coming soon”: ${comingSoonLine()}. Price, payment, font aur music, card kitni der live rehta hai, ya kisi bhi section me kya gadbad hoti hai — section ka naam ya problem bolo, main jawab deti hoon ya seedha wahan le chalti hoon.`,
+  en: `I’m Joy, the assistant here at isZma, The Digital Mall. Live right now: ${liveSectionLine()} — animated greeting cards (including a FREE Welcome Card you can send again and again), print-ready report cards from an Excel mark sheet (7 free generations per account), and Game Zone’s Pair-3Balls against the computer, a friend or a real opponent. Still “coming soon”: ${comingSoonLine()}. Ask me about prices, payment, fonts and music, card lifetime, or what usually goes wrong in any section — name a section or a problem and I’ll answer it or take you straight there.`,
+  hi: `Main Joy hoon, isZma ki assistant. Abhi live: ${liveSectionLine()} — animated greeting cards (FREE Welcome Card bhi, jo aap baar baar bhej sakte ho), Excel mark sheet se print-ready report cards (per account 7 free generations), aur Game Zone me Pair-3Balls (computer, dost ya asli opponent ke saath). “Coming soon”: ${comingSoonLine()}. Price, payment, font aur music, card kitni der live rehta hai, ya kisi bhi section me kya gadbad hoti hai — section ka naam ya problem bolo, main jawab deti hoon ya seedha wahan le chalti hoon.`,
 };
 
 /**
@@ -410,11 +410,11 @@ const HELP_REPLY: JoyText = {
  *
  * When someone asks something that has nothing to do with the mall, Joy does
  * not pretend or guess — she says (nicely, in the visitor's own language) that
- * she can only help with Ishmaverse, then lists what she *can* do.
+ * she can only help with isZma, then lists what she *can* do.
  */
 const FALLBACK_REPLY: JoyText = {
-  en: 'I’m Joy, the Ishmaverse assistant — I can only help with things here on Ishmaverse. Ask me about our greeting cards, ReportCard Studio, prices, or where to find a section, and I’ll take you straight there.',
-  hi: 'Main Joy hoon, Ishmaverse ki assistant — main sirf Ishmaverse se judi cheezon me madad kar sakti hoon. Greeting cards, ReportCard Studio, price, ya koi section kahan hai — ye poochhiye, main seedha wahan le chalti hoon.',
+  en: 'I’m Joy, the isZma assistant — I can only help with things here on isZma. Ask me about our greeting cards, ReportCard Studio, prices, or where to find a section, and I’ll take you straight there.',
+  hi: 'Main Joy hoon, isZma ki assistant — main sirf isZma se judi cheezon me madad kar sakti hoon. Greeting cards, ReportCard Studio, price, ya koi section kahan hai — ye poochhiye, main seedha wahan le chalti hoon.',
 };
 
 export const getFallback = (lang: JoyLang): string => pick(FALLBACK_REPLY, lang);
@@ -493,7 +493,7 @@ const affixOnly = (typed: string, expected: string): boolean => {
  * Typo-tolerant keyword search, used only after the exact matcher misses.
  *
  * This is what lets Joy understand "reprot card kaha hai", "greeeting price" or
- * "markshet banao" instead of falling back to the "I only help with Ishmaverse"
+ * "markshet banao" instead of falling back to the "I only help with isZma"
  * message. Multi-word keywords are matched over a sliding window of query
  * tokens, and a keyword only counts when it is *not* an exact match (those are
  * handled by the faster regex path) and stays inside its typo budget.
