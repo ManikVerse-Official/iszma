@@ -4,6 +4,10 @@ import { SmartImage } from './SmartImage';
 import { IsZmaWordmark } from './brand/IsZmaWordmark';
 
 const FOOTER_LINKS = [
+  { to: '/store', label: 'Store' },
+  { to: '/blog', label: 'Journal' },
+  { to: '/faq', label: 'FAQ' },
+  { to: '/contact', label: 'Contact' },
   { to: '/terms', label: 'Terms & Conditions' },
   { to: '/privacy', label: 'Privacy Policy' },
   { to: '/founder', label: 'Meet the Founder' },

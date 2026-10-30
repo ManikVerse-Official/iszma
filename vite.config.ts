@@ -79,11 +79,19 @@ export default defineConfig(({ mode }) => {
         'logos/iszma-icon-512.png',
       ],
       manifest: {
+        /*
+         * A stable `id` keeps the installed app's identity across rebrands: the
+         * browser treats a changed name/icon as an update to the same app, not
+         * as a different app that has to be installed again.
+         */
+        id: '/',
         name: 'isZma — The Digital Mall',
         short_name: 'isZma',
         description: 'The Digital Mall — Tech, Art, Comics, Education, greeting cards and report card tools.',
-        theme_color: '#6d28d9',
+        /* Matches the `theme-color` meta tag in index.html and the app background. */
+        theme_color: '#0a0612',
         background_color: '#0a0612',
+        lang: 'en-IN',
         display: 'standalone',
         scope: '/',
         start_url: '/',
@@ -113,6 +121,33 @@ export default defineConfig(({ mode }) => {
         // fallback — otherwise the iframe could be served the mall page.
         globIgnores: ['**/reportcard/**'],
         navigateFallbackDenylist: [/^\/reportcard\//],
+        /*
+         * Update lifecycle: a downloaded build activates immediately, claims
+         * the open tabs and drops caches from older builds. Combined with the
+         * update loop in src/services/pwaUpdate.ts, a deployed rebrand (name,
+         * icons, theme colour) reaches installed users without a reinstall.
+         * The manifest is deliberately not precached, so the browser
+         * re-reads it from the network on the next launch.
+         */
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'google-fonts-stylesheets' },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-webfonts',
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
+        ],
       },
     }),
   ],

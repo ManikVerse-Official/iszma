@@ -11,4 +11,4 @@ Disallow: /create-greeting
 Disallow: /game-zone/room/
 Disallow: /greet/
 
-Sitemap: __SITE_URL__/sitemap.xml
+Sitemap: https://www.iszma.com/sitemap.xml

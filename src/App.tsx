@@ -34,6 +34,11 @@ const ManageCard = lazy(() =>
 const Legal = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Legal })));
 const Founder = lazy(() => import('./pages/Founder').then((m) => ({ default: m.Founder })));
 const GameZone = lazy(() => import('./pages/GameZone').then((m) => ({ default: m.GameZone })));
+/* Indexable marketing pages — every URL listed in sitemap.xml resolves here. */
+const Store = lazy(() => import('./pages/Info').then((m) => ({ default: m.Store })));
+const Blog = lazy(() => import('./pages/Info').then((m) => ({ default: m.Blog })));
+const Faq = lazy(() => import('./pages/Info').then((m) => ({ default: m.Faq })));
+const Contact = lazy(() => import('./pages/Info').then((m) => ({ default: m.Contact })));
 const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
 
 const RouteFallback = () => (
@@ -69,6 +74,10 @@ function App() {
         <Route path="/create-greeting" element={<CreateGreeting />} />
         <Route path="/manage/:token" element={<ManageCard />} />
         <Route path="/founder" element={<Founder />} />
+        <Route path="/store" element={<Store />} />
+        <Route path="/blog" element={<Blog />} />
+        <Route path="/faq" element={<Faq />} />
+        <Route path="/contact" element={<Contact />} />
         {/* Game Zone: the lobby, plus invite links (/game-zone/room/<code>). */}
         <Route path="/game-zone" element={<GameZone />} />
         <Route path="/game-zone/room/:code" element={<GameZone />} />

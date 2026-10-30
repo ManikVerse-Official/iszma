@@ -7,6 +7,7 @@ import { GreetingProvider } from './context/GreetingContext.tsx'
 import { CatalogProvider } from './context/CatalogContext.tsx'
 import { CurrencyProvider } from './context/CurrencyContext.tsx'
 import { BrowserRouter } from 'react-router-dom'
+import { setupPwaUpdates } from './services/pwaUpdate.ts'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -30,3 +31,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </BrowserRouter>
   </React.StrictMode>,
 )
+
+/*
+ * Start the service-worker update loop after the first paint: the worker itself
+ * is registered inside setupPwaUpdates so it can auto-apply a new build (and
+ * reload once) instead of leaving installed users on stale assets.
+ */
+setupPwaUpdates()
